@@ -9,7 +9,7 @@ decision_tree = decision_tree.fit(iris.data, iris.target)
 r = export_text(decision_tree, feature_names=iris['feature_names'])
 print(r)
 
-data = arff.loadarff('breast-cancer.arff')
+data = arff.loadarff('datasets-UCI/UCI/iris.arff')
 df = pd.DataFrame(data[0])
 
 print(df.head())
