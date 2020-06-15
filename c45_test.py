@@ -111,3 +111,8 @@ print('Loaded %d models' % len(members))
 
 ensemble_res = ensemble_predictions(members, X)
 print(accuracy_score(ensemble_res[0], y))
+
+# Same process of REFNE
+synth_samples = X.shape[0] * 2
+xSynth = synthetic_data_generator(X, synth_samples)
+ySynth = ensemble_predictions(members, xSynth)
