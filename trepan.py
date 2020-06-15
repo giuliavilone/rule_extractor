@@ -179,6 +179,7 @@ class SplitFinder:
 
         # get sorted indices for X, sorting along axis=0 (only axis here)
         sorted_indices = np.argsort(X, axis=0)
+        # sorted_indices = X.values.argsort(axis=0)
 
         # intialize gains array
         gains = np.zeros(num_examples)
@@ -251,6 +252,7 @@ class SplitFinder:
 
         # build split rule object
         feature_to_split = split_point[1]
+        print(split_point)
         split_value = X[split_point]
 
         # avoid making a trivial split
