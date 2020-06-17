@@ -28,14 +28,15 @@ def network_pruning(m, w, cX, cy):
     :param cy: correcty
     :return: pruned weights
     """
-    ret = copy.deepcopy(w)
-    limits = []
+    retw = copy.deepcopy(w)
+    retcX = copy.deepcopy(cX)
     # Theta is initialised to be equal to the length of the correct cases as the assumption is that the removal of a
     # node will lead to all the cases to be misclassified. This number will be reduced in the for loop to the minimum
     # number of errors
     theta = len(cy)
+    insignificant_neurons = []
     for i in range(w[0].shape[0]):
-        if not np.array_equal(w[0][i], np.zeros(3)):
+        if not np.array_equal(w[0][i], np.zeros(3)):  # Avoiding working on already insignificant nodes
             new_w = copy.deepcopy(w)
             new_w[0][i] = np.zeros(3)
             m.set_weights(new_w)
@@ -44,20 +45,20 @@ def network_pruning(m, w, cX, cy):
             misclassified = cX[[res[i] != cy[i] for i in range(len(cy))]]
             misclassified = misclassified[:, i]
             err = len(misclassified)
-            if err < theta:
+            if err <= theta:
                 theta = err
-            if err > 0:
-                limits.append({'err': err, 'limits': [max(misclassified), min(misclassified)], 'index': i})
-            else:
-                limits.append({'err': err, 'limits': [0, 0], 'index': i})
-        else:
-            limits.append({'err': 0, 'limits': [0, 0], 'index': i})
+                insignificant_neurons.append(i)
+    for item in reversed(insignificant_neurons):
+        retw[0] = np.delete(retw[0], item, 0)
+        retcX = np.delete(retcX, item, 1)
+    return retw, retcX, insignificant_neurons
 
-    for item in limits:
-        if item['err'] <= theta:
-            ret[0][item['index']] = np.zeros(3)
-    return ret, limits
-
+def model_builder(input_shape):
+    model = Sequential()
+    model.add(Dense(3, input_dim=input_shape, activation='relu'))
+    model.add(Dense(2, activation='softmax'))
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+    return model
 
 # Main code
 data = arff.loadarff('datasets-UCI/UCI/diabetes.arff')
@@ -100,24 +101,25 @@ results = np.argmax(results, axis=1)
 correctX = X[[results[i] == y[i] for i in range(len(y))]]
 correcty = y[[results[i] == y[i] for i in range(len(y))]]
 
-
 new_res = model.predict(X_train)
 new_res = np.argmax(new_res, axis=1)
 acc = accuracy_score(new_res, y_train)
 
-
 # Accuracy on training dataset
 pruning = True
 while pruning:
-    new_weights, limit_list = network_pruning(model, weights, correctX, correcty)
-    model.set_weights(new_weights)
-    new_res = model.predict(X_train)
-    new_res = np.argmax(new_res, axis=1)
-    new_acc = accuracy_score(new_res, y_train)
-    if (new_acc >= acc - TOLERANCE) and (np.sum(new_weights[0]) != 0):
-        weights = new_weights
+    new_weights, new_correctX, ins_index = network_pruning(model, weights, correctX, correcty)
+    if new_weights[0].shape[0] > 0:
+        model = model_builder(new_weights[0].shape[0])
+        model.set_weights(new_weights)
+        X_train = np.delete(X_train, ins_index, 1)
+        new_res = model.predict(X_train)
+        new_res = np.argmax(new_res, axis=1)
+        new_acc = accuracy_score(new_res, y_train)
+        if new_acc >= acc - TOLERANCE:
+            weights = new_weights
+            correctX = new_correctX
+        else:
+            pruning = False
     else:
         pruning = False
-
-print(weights)
-print(limit_list)
