@@ -16,6 +16,49 @@ import sys
 TOLERANCE = 0.01
 MODEL_NAME = 'rxren_model.h5'
 
+
+# Functions
+def network_pruning(m, w, cX, cy):
+    """
+    This function removes the insignificant input neurons
+    :param m: model
+    :param w: model's weights
+    :param t: theta
+    :param cX: correctX
+    :param cy: correcty
+    :return: pruned weights
+    """
+    ret = copy.deepcopy(w)
+    limits = []
+    # Theta is initialised to be equal to the length of the correct cases as the assumption is that the removal of a
+    # node will lead to all the cases to be misclassified. This number will be reduced in the for loop to the minimum
+    # number of errors
+    theta = len(cy)
+    for i in range(w[0].shape[0]):
+        if not np.array_equal(w[0][i], np.zeros(3)):
+            new_w = copy.deepcopy(w)
+            new_w[0][i] = np.zeros(3)
+            m.set_weights(new_w)
+            res = m.predict(cX)
+            res = np.argmax(res, axis=1)
+            misclassified = cX[[res[i] != cy[i] for i in range(len(cy))]]
+            misclassified = misclassified[:, i]
+            err = len(misclassified)
+            if err < theta:
+                theta = err
+            if err > 0:
+                limits.append({'err': err, 'limits': [max(misclassified), min(misclassified)], 'index': i})
+            else:
+                limits.append({'err': err, 'limits': [0, 0], 'index': i})
+        else:
+            limits.append({'err': 0, 'limits': [0, 0], 'index': i})
+
+    for item in limits:
+        if item['err'] <= theta:
+            ret[0][item['index']] = np.zeros(3)
+    return ret, limits
+
+
 # Main code
 data = arff.loadarff('datasets-UCI/UCI/diabetes.arff')
 data = pd.DataFrame(data[0])
@@ -38,7 +81,7 @@ checkpointer = ModelCheckpoint(filepath=MODEL_NAME,
                                   verbose=1)
 
 ix = [i for i in range(len(X))]
-train_index = resample(ix, replace=True, n_samples=int(len(X)*0.7))
+train_index = resample(ix, replace=True, n_samples=int(len(X)*0.7), random_state=0)
 val_index = [x for x in ix if x not in train_index]
 X_train, X_test = X[train_index], X[val_index]
 y_train, y_test = y[train_index], y[val_index]
@@ -47,43 +90,34 @@ model_train = False
 if model_train:
     history = model.fit(X_train, to_categorical(y_train, num_classes=2),
                             validation_data=(X_test, to_categorical(y_test, num_classes=2)),
-                            epochs=800,
+                            epochs=500,
                             callbacks=[checkpointer])
 
 model = load_model(MODEL_NAME)
+weights = np.array(model.get_weights())
 results = model.predict(X)
 results = np.argmax(results, axis=1)
 correctX = X[[results[i] == y[i] for i in range(len(y))]]
 correcty = y[[results[i] == y[i] for i in range(len(y))]]
 
+
+new_res = model.predict(X_train)
+new_res = np.argmax(new_res, axis=1)
+acc = accuracy_score(new_res, y_train)
+
+
 # Accuracy on training dataset
-train_res = model.predict(X_train)
-train_res = np.argmax(train_res, axis=1)
-acc = accuracy_score(train_res, y_train)
-print(acc)
-weights = np.array(model.get_weights())
-insignificant_neuron = []
-for i in range(weights[0].shape[0]):
-    print('Working on neuron ' + str(i))
-    new_weights = copy.deepcopy(weights)
-    new_weights[0][i] = np.zeros(3)
+pruning = True
+while pruning:
+    new_weights, limit_list = network_pruning(model, weights, correctX, correcty)
     model.set_weights(new_weights)
-    new_results = model.predict(correctX)
-    new_results = np.argmax(new_results, axis=1)
-    misclassified = correctX[[new_results[i] != correcty[i] for i in range(len(correcty))]]
-    misclassified = misclassified[:,i]
-    print(len(misclassified))
-    if len(misclassified) > 0:
-        print(max(misclassified))
-        print(min(misclassified))
-    # Accuracy on training dataset
-    res = model.predict(X_train)
-    res = np.argmax(res, axis=1)
-    new_acc = accuracy_score(res, y_train)
-    print(new_acc)
-    print('--------------------------------------------------')
-    if new_acc >= acc - TOLERANCE:
-        insignificant_neuron.append(i)
+    new_res = model.predict(X_train)
+    new_res = np.argmax(new_res, axis=1)
+    new_acc = accuracy_score(new_res, y_train)
+    if (new_acc >= acc - TOLERANCE) and (np.sum(new_weights[0]) != 0):
+        weights = new_weights
+    else:
+        pruning = False
 
-print(insignificant_neuron)
-
+print(weights)
+print(limit_list)
