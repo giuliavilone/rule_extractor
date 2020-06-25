@@ -18,40 +18,68 @@ MODEL_NAME = 'rxren_model.h5'
 
 
 # Functions
-def network_pruning(m, w, cX, cy):
+def input_delete(insignificant_index, inDf, inWeight=None):
+    """
+    Delete the variable of the input vector corresponding the insignificant input neurons and, if required, the
+    corresponding weights of the neural network
+    :param inDf:
+    :param inDf:
+    :param inWeight:
+    :return: the trimmed weights and input vector
+    """
+    outDf = copy.deepcopy(inDf)
+    outDf = np.delete(outDf, insignificant_index, 1)
+    outWeight = None
+    if inWeight is not None:
+        outWeight = copy.deepcopy(inWeight)
+        outWeight[0] = np.delete(outWeight[0], insignificant_index, 0)
+    return outDf, outWeight
+
+def model_pruned_prediction(inputX,w):
+    new_m = model_builder(w[0].shape[0])
+    new_m.set_weights(w)
+    results = new_m.predict(inputX)
+    results = np.argmax(results, axis=1)
+    return results
+
+def network_pruning(w, cX, cy, train_x, train_y, accuracy):
     """
     This function removes the insignificant input neurons
-    :param m: model
     :param w: model's weights
     :param t: theta
     :param cX: correctX
     :param cy: correcty
     :return: pruned weights
     """
-    retw = copy.deepcopy(w)
-    retcX = copy.deepcopy(cX)
-    # Theta is initialised to be equal to the length of the correct cases as the assumption is that the removal of a
-    # node will lead to all the cases to be misclassified. This number will be reduced in the for loop to the minimum
-    # number of errors
-    theta = len(cy)
     insignificant_neurons = []
+    missclassified_list = []
+    error_list = []
+    new_acc = 0
     for i in range(w[0].shape[0]):
-        if not np.array_equal(w[0][i], np.zeros(3)):  # Avoiding working on already insignificant nodes
-            new_w = copy.deepcopy(w)
-            new_w[0][i] = np.zeros(3)
-            m.set_weights(new_w)
-            res = m.predict(cX)
-            res = np.argmax(res, axis=1)
-            misclassified = cX[[res[i] != cy[i] for i in range(len(cy))]]
-            misclassified = misclassified[:, i]
-            err = len(misclassified)
-            if err <= theta:
-                theta = err
-                insignificant_neurons.append(i)
-    for item in reversed(insignificant_neurons):
-        retw[0] = np.delete(retw[0], item, 0)
-        retcX = np.delete(retcX, item, 1)
-    return retw, retcX, insignificant_neurons
+        newCx, new_w = input_delete(i, cX, inWeight=w)
+        res = model_pruned_prediction(newCx, new_w)
+        misclassified = [i for i in range(len(cy)) if res[i] != cy[i]]
+        missclassified_list.append(misclassified)
+        err = len(misclassified)
+        error_list.append(err)
+    pruning = True
+    theta = min(error_list)
+    while pruning:
+        insignificant_neurons = insignificant_neurons + [i for i, e in enumerate(error_list) if e == theta]
+        new_train_x, new_w = input_delete(insignificant_neurons, train_x, inWeight=w)
+        new_res = model_pruned_prediction(new_train_x, new_w)
+        new_acc = accuracy_score(new_res, train_y)
+        if new_acc >= accuracy - TOLERANCE:
+            new_error_list = [e for i, e in enumerate(error_list) if e > theta]
+            # Leaving at least two significant neurons
+            if len(new_error_list) > 2:
+                theta = min(new_error_list)
+            else:
+                pruning = False
+        else:
+            pruning = False
+    return missclassified_list, sorted(insignificant_neurons), new_acc, theta
+
 
 def model_builder(input_shape):
     model = Sequential()
@@ -59,6 +87,13 @@ def model_builder(input_shape):
     model.add(Dense(2, activation='softmax'))
     model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     return model
+
+def rule_limits(c_y, missclassified_list, significant_neurons, error, alpha=0.5):
+    for i in significant_neurons:
+        miss_class = c_y[missclassified_list[i]]
+
+    return miss_class
+
 
 # Main code
 data = arff.loadarff('datasets-UCI/UCI/diabetes.arff')
@@ -70,10 +105,7 @@ le = LabelEncoder()
 y = le.fit_transform(data['class'].tolist())
 
 # define model
-model = Sequential()
-model.add(Dense(3, input_dim=X.shape[-1], activation='relu'))
-model.add(Dense(2, activation='softmax'))
-model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+model = model_builder(X.shape[-1])
 
 checkpointer = ModelCheckpoint(filepath=MODEL_NAME,
                                   save_weights_only=False,
@@ -104,22 +136,12 @@ correcty = y[[results[i] == y[i] for i in range(len(y))]]
 new_res = model.predict(X_train)
 new_res = np.argmax(new_res, axis=1)
 acc = accuracy_score(new_res, y_train)
+print(acc)
 
-# Accuracy on training dataset
-pruning = True
-while pruning:
-    new_weights, new_correctX, ins_index = network_pruning(model, weights, correctX, correcty)
-    if new_weights[0].shape[0] > 0:
-        model = model_builder(new_weights[0].shape[0])
-        model.set_weights(new_weights)
-        X_train = np.delete(X_train, ins_index, 1)
-        new_res = model.predict(X_train)
-        new_res = np.argmax(new_res, axis=1)
-        new_acc = accuracy_score(new_res, y_train)
-        if new_acc >= acc - TOLERANCE:
-            weights = new_weights
-            correctX = new_correctX
-        else:
-            pruning = False
-    else:
-        pruning = False
+miss_list, ins_index, new_accuracy, err = network_pruning(weights, correctX, correcty, X_train, y_train, acc)
+significant_index = [i for i in range(weights[0].shape[0]) if i not in ins_index]
+print(ins_index)
+print(new_accuracy)
+print(err)
+rule_limits(correcty, miss_list, significant_index, err, alpha=0.5)
+
