@@ -11,6 +11,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score
 import copy
 import sys
+from itertools import groupby
 
 # Global variable
 TOLERANCE = 0.01
@@ -88,11 +89,17 @@ def model_builder(input_shape):
     model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
     return model
 
-def rule_limits(c_y, missclassified_list, significant_neurons, error, alpha=0.5):
+def rule_limits_calculator(c_x, c_y, missclassified_list, significant_neurons, error, alpha=0.5):
+    c_tot = np.column_stack((c_x, c_y))
+    grouped_miss_class = []
     for i in significant_neurons:
-        miss_class = c_y[missclassified_list[i]]
-
-    return miss_class
+        miss_class = c_tot[missclassified_list[i]]
+        # Splitting the missclassified input values according to their output classes
+        grouped_miss_class = grouped_miss_class + [{'neuron': i , 'class': k,
+                               'limits': [min(miss_class[:, i][miss_class[:, -1] == k]),
+                                          max(miss_class[:, i][miss_class[:, -1] == k])]}
+                                        for k in np.unique(miss_class[:, -1])]
+    return grouped_miss_class
 
 
 # Main code
@@ -143,5 +150,6 @@ significant_index = [i for i in range(weights[0].shape[0]) if i not in ins_index
 print(ins_index)
 print(new_accuracy)
 print(err)
-rule_limits(correcty, miss_list, significant_index, err, alpha=0.5)
+rule_limits = rule_limits_calculator(correctX, correcty, miss_list, significant_index, err, alpha=0.5)
+print(rule_limits)
 
