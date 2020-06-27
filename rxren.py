@@ -83,22 +83,23 @@ def network_pruning(w, cX, cy, train_x, train_y, accuracy):
 
 
 def model_builder(input_shape):
-    model = Sequential()
-    model.add(Dense(3, input_dim=input_shape, activation='relu'))
-    model.add(Dense(2, activation='softmax'))
-    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
-    return model
+    mod = Sequential()
+    mod.add(Dense(3, input_dim=input_shape, activation='relu'))
+    mod.add(Dense(2, activation='softmax'))
+    mod.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+    return mod
 
 def rule_limits_calculator(c_x, c_y, missclassified_list, significant_neurons, error, alpha=0.5):
     c_tot = np.column_stack((c_x, c_y))
     grouped_miss_class = []
     for i in significant_neurons:
         miss_class = c_tot[missclassified_list[i]]
-        # Splitting the missclassified input values according to their output classes
-        grouped_miss_class = grouped_miss_class + [{'neuron': i , 'class': k,
+        # Splitting the misclassified input values according to their output classes
+        grouped_miss_class = grouped_miss_class + [{'neuron': i, 'class': k,
                                'limits': [min(miss_class[:, i][miss_class[:, -1] == k]),
-                                          max(miss_class[:, i][miss_class[:, -1] == k])]}
-                                        for k in np.unique(miss_class[:, -1])]
+                                max(miss_class[:, i][miss_class[:, -1] == k])]}
+                                for k in np.unique(miss_class[:, -1])
+                                if len(miss_class[:, i][miss_class[:, -1] == k]) > (error * alpha)]
     return grouped_miss_class
 
 
