@@ -11,7 +11,6 @@ import numpy as np
 from sklearn.metrics import accuracy_score
 import copy
 import sys
-from itertools import groupby
 
 # Global variable
 TOLERANCE = 0.01
@@ -102,6 +101,24 @@ def rule_limits_calculator(c_x, c_y, missclassified_list, significant_neurons, e
                                 if len(miss_class[:, i][miss_class[:, -1] == k]) > (error * alpha)]
     return grouped_miss_class
 
+def rule_evaluator(train_x, train_y, rule_list, class_list):
+    rule_accuracy = 0
+    predicted_y = np.empty((train_y.shape))
+    predicted_y[:] = np.NaN
+    for rule in rule_list:
+        if rule['class'] in class_list[:]:
+            class_list = np.delete(class_list, rule['class'])
+        col = rule['neuron']
+        minimum = rule['limits'][0]
+        maximum = rule['limits'][1]
+        predicted_y[(train_x[:, col] >= minimum) * (train_x[:, col] <= maximum)] = int(rule['class'])
+    if len(class_list) == 1:
+        predicted_y[np.isnan(predicted_y)] = class_list[0]
+    else:
+        print("It is not possible to identify default class")
+    rule_accuracy = accuracy_score(predicted_y, train_y)
+    return rule_accuracy
+
 
 # Main code
 data = arff.loadarff('datasets-UCI/UCI/diabetes.arff')
@@ -148,9 +165,10 @@ print(acc)
 
 miss_list, ins_index, new_accuracy, err = network_pruning(weights, correctX, correcty, X_train, y_train, acc)
 significant_index = [i for i in range(weights[0].shape[0]) if i not in ins_index]
-print(ins_index)
 print(new_accuracy)
-print(err)
 rule_limits = rule_limits_calculator(correctX, correcty, miss_list, significant_index, err, alpha=0.5)
 print(rule_limits)
+print()
 
+rule_acc = rule_evaluator(X_train, y_train, rule_limits, np.unique(y))
+print(rule_acc)
