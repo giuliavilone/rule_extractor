@@ -71,8 +71,8 @@ def network_pruning(w, cX, cy, train_x, train_y, accuracy):
         new_acc = accuracy_score(new_res, train_y)
         if new_acc >= accuracy - TOLERANCE:
             new_error_list = [e for i, e in enumerate(error_list) if e > theta]
-            # Leaving at least two significant neurons
-            if len(new_error_list) > 2:
+            # Leaving at least one significant neuron
+            if len(new_error_list) > 1:
                 theta = min(new_error_list)
             else:
                 pruning = False
@@ -102,7 +102,6 @@ def rule_limits_calculator(c_x, c_y, missclassified_list, significant_neurons, e
     return grouped_miss_class
 
 def rule_evaluator(train_x, train_y, rule_list, class_list):
-    rule_accuracy = 0
     predicted_y = np.empty((train_y.shape))
     predicted_y[:] = np.NaN
     for rule in rule_list:
@@ -117,7 +116,15 @@ def rule_evaluator(train_x, train_y, rule_list, class_list):
     else:
         print("It is not possible to identify default class")
     rule_accuracy = accuracy_score(predicted_y, train_y)
-    return rule_accuracy
+    # Calculate min and max of mismatched instances
+    mismatched = [index for index, elem in enumerate(train_y) if elem != predicted_y[index]]
+    ret_rules = []
+    for rule in rule_list:
+        col = rule['neuron']
+        mismatched_values = train_x[mismatched, col]
+        rule['new_limits'] = [min(mismatched_values), max(mismatched_values)]
+        ret_rules.append(rule)
+    return rule_accuracy, ret_rules
 
 
 # Main code
@@ -170,5 +177,10 @@ rule_limits = rule_limits_calculator(correctX, correcty, miss_list, significant_
 print(rule_limits)
 print()
 
-rule_acc = rule_evaluator(X_train, y_train, rule_limits, np.unique(y))
+rule_acc, new_limits = rule_evaluator(X_train, y_train, rule_limits, np.unique(y))
 print(rule_acc)
+print(new_limits)
+new_limits[0]['limits'] = new_limits[0].pop('new_limits')
+rule_acc2, new_limits2 = rule_evaluator(X_train, y_train, new_limits, np.unique(y))
+print(rule_acc2)
+print(new_limits2)
