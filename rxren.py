@@ -127,6 +127,7 @@ def rule_evaluator(train_x, train_y, rule_list, class_list):
     return rule_accuracy, ret_rules
 
 
+
 # Main code
 data = arff.loadarff('datasets-UCI/UCI/diabetes.arff')
 data = pd.DataFrame(data[0])
@@ -175,12 +176,15 @@ significant_index = [i for i in range(weights[0].shape[0]) if i not in ins_index
 print(new_accuracy)
 rule_limits = rule_limits_calculator(correctX, correcty, miss_list, significant_index, err, alpha=0.5)
 print(rule_limits)
-print()
 
-rule_acc, new_limits = rule_evaluator(X_train, y_train, rule_limits, np.unique(y))
-print(rule_acc)
-print(new_limits)
-new_limits[0]['limits'] = new_limits[0].pop('new_limits')
-rule_acc2, new_limits2 = rule_evaluator(X_train, y_train, new_limits, np.unique(y))
-print(rule_acc2)
-print(new_limits2)
+rule_simplifier = True
+old_rule_acc = new_accuracy
+while rule_simplifier:
+    rule_acc, new_limits = rule_evaluator(X_train, y_train, rule_limits, np.unique(y))
+    print(rule_acc)
+    print(new_limits)
+    new_limits[0]['limits'] = new_limits[0].pop('new_limits')
+    if rule_acc > old_rule_acc:
+        old_rule_acc = rule_acc
+    else:
+        rule_simplifier = False
