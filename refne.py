@@ -12,6 +12,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score
 import sys
 from collections import Counter
+import random
 
 # Global variables
 n_members = 5
@@ -78,46 +79,49 @@ def chimerge(data, attr, label):
     while more_merges: # While loop
         chi = []
         for i in range(len(intervals)-1):
-            # Calculate the Chi2 value
-            obs0 = data[data[attr].between(intervals[i][0], intervals[i][1])]
-            obs1 = data[data[attr].between(intervals[i+1][0], intervals[i+1][1])]
-            total = len(obs0) + len(obs1)
-            count_0 = np.array([v for i, v in {**empty_count, **Counter(obs0[label])}.items()])
-            count_1 = np.array([v for i, v in {**empty_count, **Counter(obs1[label])}.items()])
-            count_total = count_0 + count_1
-            expected_0 = count_total*sum(count_0)/total
-            expected_1 = count_total*sum(count_1)/total
-            chi_ = (count_0 - expected_0)**2/expected_0 + (count_1 - expected_1)**2/expected_1
-            chi_ = np.nan_to_num(chi_) # Deal with the zero counts
-            chi.append(sum(chi_)) # Finally do the summation for Chi2
-        min_chi = min(chi) # Find the minimal Chi2 for current iteration
-        min_chi_index = -1
-        for i, v in enumerate(chi):
-            if v == min_chi:
-                min_chi_index = i # Find the index of the interval to be merged
-                break
-        new_intervals = [] # Prepare for the merged new data array
-        skip = False
-        done = False
-        new_merges = False
-        for j in range(len(intervals)):
-            if skip:
-                skip = False
+            lab0 = sorted(set(data[label][data[attr].between(intervals[i][0], intervals[i][1])]))
+            lab1 = sorted(set(data[label][data[attr].between(intervals[i + 1][0], intervals[i + 1][1])]))
+            if len(lab0) + len(lab1) > 2 or lab0 != lab1:
+            # if lab0 != lab1:
                 continue
-            if j == min_chi_index and not done: # Merge the intervals
-                lab0 = sorted(set(data[label][data[attr].between(intervals[j][0], intervals[j][1])]))
-                lab1 = sorted(set(data[label][data[attr].between(intervals[j + 1][0], intervals[j + 1][1])]))
-                if lab0 == lab1:
+            else:
+                # Calculate the Chi2 value
+                obs0 = data[data[attr].between(intervals[i][0], intervals[i][1])]
+                obs1 = data[data[attr].between(intervals[i+1][0], intervals[i+1][1])]
+                total = len(obs0) + len(obs1)
+                count_0 = np.array([v for i, v in {**empty_count, **Counter(obs0[label])}.items()])
+                count_1 = np.array([v for i, v in {**empty_count, **Counter(obs1[label])}.items()])
+                count_total = count_0 + count_1
+                expected_0 = count_total*sum(count_0)/total
+                expected_1 = count_total*sum(count_1)/total
+                chi_ = (count_0 - expected_0)**2/expected_0 + (count_1 - expected_1)**2/expected_1
+                chi_ = np.nan_to_num(chi_) # Deal with the zero counts
+                chi.append(sum(chi_)) # Finally do the summation for Chi2
+        if len(chi) == 0:
+            more_merges = False
+            break
+        else:
+            min_chi = min(chi) # Find the minimal Chi2 for current iteration
+            min_chi_index = -1
+            for i, v in enumerate(chi):
+                if v == min_chi:
+                    min_chi_index = i # Find the index of the interval to be merged
+                    break
+            new_intervals = [] # Prepare for the merged new data array
+            skip = False
+            done = False
+            for j in range(len(intervals)):
+                if skip:
+                    skip = False
+                    continue
+                if j == min_chi_index and not done: # Merge the intervals
                     t = intervals[j] + intervals[j+1]
                     new_intervals.append([min(t), max(t)])
                     skip = True
                     done = True
-                    new_merges = True
-            else:
-                new_intervals.append(intervals[j])
-        intervals = new_intervals
-        if not new_merges:
-            more_merges = False
+                else:
+                    new_intervals.append(intervals[j])
+            intervals = new_intervals
     return intervals
 
 def discretizer(indf, intervals):
@@ -134,6 +138,23 @@ def discretizer(indf, intervals):
         maxVal = intervals[i][1]
         indf[(indf >= minVal) & (indf <= maxVal)] = minVal
     return indf.tolist()
+
+
+def rule_maker(df, intervals):
+    """
+    Creates the IF-THEN rules
+    :param df:
+    :return: rules
+    """
+    # Getting list of columns of input dataframe and randomly shuffling them
+    col = df.columns.values.tolist()
+    col.remove('class')
+    random.shuffle(col)
+    for item in col:
+        interv = intervals[item]
+        attr_list = df[[item, 'class']].groupby(item)['class'].nunique().reset_index(drop=False)
+        print(interv)
+        print(attr_list)
 
 
 # Main code
@@ -190,6 +211,10 @@ ySynth = ensemble_predictions(members, xSynth)
 attr_list = xSynth.columns.tolist()
 totSynth = xSynth
 totSynth['class'] = ySynth[0]
+interv_dict = {}
 for attr in attr_list:
     interv = chimerge(data=totSynth, attr=attr, label='class')
     totSynth[attr] = discretizer(totSynth[attr], interv)
+    interv_dict[attr] = interv
+
+rule_maker(totSynth, interv_dict)
