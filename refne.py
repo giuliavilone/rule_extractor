@@ -13,6 +13,7 @@ from sklearn.metrics import accuracy_score
 import sys
 from collections import Counter
 import random
+import copy
 
 # Global variables
 n_members = 5
@@ -67,7 +68,6 @@ def chimerge(data, attr, label):
     :param data:
     :param attr:
     :param label:
-    :param max_intervals:
     :return:
     """
     distinct_vals = sorted(set(data[attr])) # Sort the distinct values
@@ -81,8 +81,9 @@ def chimerge(data, attr, label):
         for i in range(len(intervals)-1):
             lab0 = sorted(set(data[label][data[attr].between(intervals[i][0], intervals[i][1])]))
             lab1 = sorted(set(data[label][data[attr].between(intervals[i + 1][0], intervals[i + 1][1])]))
-            if len(lab0) + len(lab1) > 2 or lab0 != lab1:
-            # if lab0 != lab1:
+            # if len(lab0) + len(lab1) > 2 or lab0 != lab1:
+            if lab0 != lab1:
+                chi.append(1000.0)
                 continue
             else:
                 # Calculate the Chi2 value
@@ -97,31 +98,30 @@ def chimerge(data, attr, label):
                 chi_ = (count_0 - expected_0)**2/expected_0 + (count_1 - expected_1)**2/expected_1
                 chi_ = np.nan_to_num(chi_) # Deal with the zero counts
                 chi.append(sum(chi_)) # Finally do the summation for Chi2
-        if len(chi) == 0:
-            more_merges = False
+
+        min_chi = min(chi) # Find the minimal Chi2 for current iteration
+        if min_chi == 1000.0:
             break
-        else:
-            min_chi = min(chi) # Find the minimal Chi2 for current iteration
-            min_chi_index = -1
-            for i, v in enumerate(chi):
-                if v == min_chi:
-                    min_chi_index = i # Find the index of the interval to be merged
-                    break
-            new_intervals = [] # Prepare for the merged new data array
-            skip = False
-            done = False
-            for j in range(len(intervals)):
-                if skip:
-                    skip = False
-                    continue
-                if j == min_chi_index and not done: # Merge the intervals
-                    t = intervals[j] + intervals[j+1]
-                    new_intervals.append([min(t), max(t)])
-                    skip = True
-                    done = True
-                else:
-                    new_intervals.append(intervals[j])
-            intervals = new_intervals
+        min_chi_index = -1
+        for i, v in enumerate(chi):
+            if v == min_chi:
+                min_chi_index = i # Find the index of the interval to be merged
+                break
+        new_intervals = [] # Prepare for the merged new data array
+        skip = False
+        done = False
+        for j in range(len(intervals)):
+            if skip:
+                skip = False
+                continue
+            if j == min_chi_index and not done: # Merge the intervals
+                t = intervals[j] + intervals[j+1]
+                new_intervals.append([min(t), max(t)])
+                skip = True
+                done = True
+            else:
+                new_intervals.append(intervals[j])
+        intervals = new_intervals
     return intervals
 
 def discretizer(indf, intervals):
@@ -139,6 +139,12 @@ def discretizer(indf, intervals):
         indf[(indf >= minVal) & (indf <= maxVal)] = minVal
     return indf.tolist()
 
+def select_random_item(int_list, ex_item_list):
+    ex_list = copy.deepcopy(int_list)
+    for i in ex_item_list:
+        ex_list.remove(i)
+    new_item = random.choice(ex_list)
+    return new_item
 
 def rule_maker(df, intervals):
     """
@@ -153,20 +159,36 @@ def rule_maker(df, intervals):
     for item in col:
         interv = intervals[item]
         attr_list = df[[item, 'class']].groupby(item)['class'].nunique().reset_index(drop=False)
+        new_rules = attr_list[attr_list['class'] == 1]
+        if len(new_rules) == 0:
+            item1 = select_random_item(col, [item])
+            attr_list = df[[item, item1, 'class']].groupby([item, item1])['class'].nunique().reset_index(drop=False)
+            new_rules = attr_list[attr_list['class'] == 1]
+            if len(new_rules) == 0:
+                item2 = select_random_item(col, [item, item1])
+                attr_list = df[[item, item1, item2, 'class']].groupby([item, item1, item2])['class'].nunique().reset_index(drop=False)
+                new_rules = attr_list[attr_list['class'] == 1]
+                if len(new_rules) == 0:
+                    continue
         print(interv)
-        print(attr_list)
+        print(new_rules)
+
 
 
 # Main code
-data = arff.loadarff('datasets-UCI/UCI/iris.arff')
-data = pd.DataFrame(data[0])
-
+data, meta = arff.loadarff('datasets-UCI/UCI/iris.arff')
+data = pd.DataFrame(data)
+le = LabelEncoder()
+# Encoding the nominal fields
+for item in range(len(meta.names())):
+    item_name = meta.names()[item]
+    item_type = meta.types()[item]
+    if item_type == 'nominal':
+        data[item_name] = le.fit_transform(data[item_name].tolist())
 
 # Separating independent variables from the target one
 X = data.drop(columns=['class'])
-le = LabelEncoder()
-y = le.fit_transform(data['class'].tolist())
-
+y = data['class']
 
 # Create the object to perform cross validation
 skf = StratifiedKFold(n_splits=n_members, random_state=7, shuffle=True)
@@ -179,7 +201,7 @@ model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accur
 
 # Training the model on the 5 cross validation datasets
 fold_var = 1
-for train_index, val_index in skf.split(X,y):
+for train_index, val_index in skf.split(X, y):
     X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
     y_train, y_test = y[train_index], y[val_index]
     checkpointer = ModelCheckpoint(filepath='model_'+str(fold_var)+'.h5',
