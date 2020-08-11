@@ -18,6 +18,7 @@ import copy
 # Global variables
 n_members = 5
 
+
 # Functions
 def load_all_models(n_models):
     """
@@ -46,6 +47,7 @@ def ensemble_predictions(members, testX):
     results = mode(voted_yhats, axis=0)[0]
     return results
 
+
 def synthetic_data_generator(indf, n_samples):
     """
     Given an input dataframe, the function returns a new dataframe containing random numbers
@@ -58,7 +60,7 @@ def synthetic_data_generator(indf, n_samples):
     for column in indf.columns.tolist():
         minvalue = indf.min()[column]
         maxvalue = indf.max()[column]
-        outdf[column] = np.round(np.random.uniform(minvalue,maxvalue,n_samples),1)
+        outdf[column] = np.round(np.random.uniform(minvalue, maxvalue, n_samples), 1)
     return outdf
 
 
@@ -70,15 +72,15 @@ def chimerge(data, attr, label):
     :param label:
     :return:
     """
-    distinct_vals = sorted(set(data[attr])) # Sort the distinct values
-    labels = sorted(set(data[label])) # Get all possible labels
-    empty_count = {l: 0 for l in labels} # A helper function for padding the Counter()
+    distinct_vals = sorted(set(data[attr]))  # Sort the distinct values
+    labels = sorted(set(data[label]))  # Get all possible labels
+    empty_count = {l: 0 for l in labels}  # A helper function for padding the Counter()
     # Initialize the intervals for each attribute
     intervals = [[distinct_vals[i], distinct_vals[i]] for i in range(len(distinct_vals))]
     more_merges = True
-    while more_merges: # While loop
+    while more_merges:  # While loop
         chi = []
-        for i in range(len(intervals)-1):
+        for i in range(len(intervals) - 1):
             lab0 = sorted(set(data[label][data[attr].between(intervals[i][0], intervals[i][1])]))
             lab1 = sorted(set(data[label][data[attr].between(intervals[i + 1][0], intervals[i + 1][1])]))
             # if len(lab0) + len(lab1) > 2 or lab0 != lab1:
@@ -88,34 +90,34 @@ def chimerge(data, attr, label):
             else:
                 # Calculate the Chi2 value
                 obs0 = data[data[attr].between(intervals[i][0], intervals[i][1])]
-                obs1 = data[data[attr].between(intervals[i+1][0], intervals[i+1][1])]
+                obs1 = data[data[attr].between(intervals[i + 1][0], intervals[i + 1][1])]
                 total = len(obs0) + len(obs1)
                 count_0 = np.array([v for i, v in {**empty_count, **Counter(obs0[label])}.items()])
                 count_1 = np.array([v for i, v in {**empty_count, **Counter(obs1[label])}.items()])
                 count_total = count_0 + count_1
-                expected_0 = count_total*sum(count_0)/total
-                expected_1 = count_total*sum(count_1)/total
-                chi_ = (count_0 - expected_0)**2/expected_0 + (count_1 - expected_1)**2/expected_1
-                chi_ = np.nan_to_num(chi_) # Deal with the zero counts
-                chi.append(sum(chi_)) # Finally do the summation for Chi2
+                expected_0 = count_total * sum(count_0) / total
+                expected_1 = count_total * sum(count_1) / total
+                chi_ = (count_0 - expected_0) ** 2 / expected_0 + (count_1 - expected_1) ** 2 / expected_1
+                chi_ = np.nan_to_num(chi_)  # Deal with the zero counts
+                chi.append(sum(chi_))  # Finally do the summation for Chi2
 
-        min_chi = min(chi) # Find the minimal Chi2 for current iteration
+        min_chi = min(chi)  # Find the minimal Chi2 for current iteration
         if min_chi == 1000.0:
             break
         min_chi_index = -1
         for i, v in enumerate(chi):
             if v == min_chi:
-                min_chi_index = i # Find the index of the interval to be merged
+                min_chi_index = i  # Find the index of the interval to be merged
                 break
-        new_intervals = [] # Prepare for the merged new data array
+        new_intervals = []  # Prepare for the merged new data array
         skip = False
         done = False
         for j in range(len(intervals)):
             if skip:
                 skip = False
                 continue
-            if j == min_chi_index and not done: # Merge the intervals
-                t = intervals[j] + intervals[j+1]
+            if j == min_chi_index and not done:  # Merge the intervals
+                t = intervals[j] + intervals[j + 1]
                 new_intervals.append([min(t), max(t)])
                 skip = True
                 done = True
@@ -123,6 +125,7 @@ def chimerge(data, attr, label):
                 new_intervals.append(intervals[j])
         intervals = new_intervals
     return intervals
+
 
 def discretizer(indf, intervals):
     """
@@ -139,12 +142,14 @@ def discretizer(indf, intervals):
         indf[(indf >= minVal) & (indf <= maxVal)] = minVal
     return indf.tolist()
 
+
 def select_random_item(int_list, ex_item_list):
     ex_list = copy.deepcopy(int_list)
     for i in ex_item_list:
         ex_list.remove(i)
     new_item = random.choice(ex_list)
     return new_item
+
 
 def rule_maker(df, intervals):
     """
@@ -156,23 +161,41 @@ def rule_maker(df, intervals):
     col = df.columns.values.tolist()
     col.remove('class')
     random.shuffle(col)
+    ret = []
     for item in col:
-        interv = intervals[item]
-        attr_list = df[[item, 'class']].groupby(item)['class'].nunique().reset_index(drop=False)
-        new_rules = attr_list[attr_list['class'] == 1]
+        attr_list = df[[item, 'class']].groupby(item).agg(unique_class=('class', 'nunique'),
+                                                          max_class=('class', 'max')
+                                                          ).reset_index(drop=False)
+        new_rules = attr_list[attr_list['unique_class'] == 1]
         if len(new_rules) == 0:
             item1 = select_random_item(col, [item])
-            attr_list = df[[item, item1, 'class']].groupby([item, item1])['class'].nunique().reset_index(drop=False)
-            new_rules = attr_list[attr_list['class'] == 1]
+            attr_list = df[[item, item1, 'class']].groupby([item, item1]).agg(unique_class=('class', 'nunique'),
+                                                                              max_class=('class', 'max')
+                                                                              ).reset_index(drop=False)
+            new_rules = attr_list[attr_list['unique_class'] == 1]
             if len(new_rules) == 0:
                 item2 = select_random_item(col, [item, item1])
-                attr_list = df[[item, item1, item2, 'class']].groupby([item, item1, item2])['class'].nunique().reset_index(drop=False)
-                new_rules = attr_list[attr_list['class'] == 1]
+                attr_list = df[[item, item1, item2, 'class']].groupby([item, item1, item2]).agg(
+                    unique_class=('class', 'nunique'),
+                    max_class=('class', 'max')
+                ).reset_index(drop=False)
+                new_rules = attr_list[attr_list['unique_class'] == 1]
                 if len(new_rules) == 0:
                     continue
-        print(interv)
-        print(new_rules)
-
+        new_col = new_rules.columns.values.tolist()
+        new_col.remove('unique_class')
+        new_col.remove('max_class')
+        for index, row in new_rules.iterrows():
+            new_dict = {'neuron':new_col}
+            new_dict['class'] = row['max_class'].tolist()
+            rule_intervals = []
+            for c in new_col:
+                interv = intervals[c]
+                rule_int = [item for item in interv if item[0] == row[c]]
+                rule_intervals.append(rule_int)
+            new_dict['limits'] = rule_intervals
+        ret.append(new_dict)
+    return ret
 
 
 # Main code
@@ -204,11 +227,11 @@ fold_var = 1
 for train_index, val_index in skf.split(X, y):
     X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
     y_train, y_test = y[train_index], y[val_index]
-    checkpointer = ModelCheckpoint(filepath='model_'+str(fold_var)+'.h5',
-                                  save_weights_only=False,
-                                  monitor='loss',
-                                  save_best_only=True,
-                                  verbose=1)
+    checkpointer = ModelCheckpoint(filepath='model_' + str(fold_var) + '.h5',
+                                   save_weights_only=False,
+                                   monitor='loss',
+                                   save_best_only=True,
+                                   verbose=1)
     history = model.fit(X_train, to_categorical(y_train, num_classes=3),
                         validation_data=(X_test, to_categorical(y_test, num_classes=3)),
                         epochs=50,
@@ -239,4 +262,5 @@ for attr in attr_list:
     totSynth[attr] = discretizer(totSynth[attr], interv)
     interv_dict[attr] = interv
 
-rule_maker(totSynth, interv_dict)
+final_rules = rule_maker(totSynth, interv_dict)
+print(final_rules)
