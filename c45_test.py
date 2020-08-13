@@ -10,6 +10,7 @@ from keras.models import load_model
 import numpy as np
 from scipy.stats import mode
 from sklearn.metrics import accuracy_score
+from sklearn.tree import DecisionTreeClassifier, export_text, export
 import sys
 
 # Global variables
@@ -53,26 +54,58 @@ def ensemble_predictions(members, testX):
     results = mode(voted_yhats, axis=0)[0]
     return results
 
-def synthetic_data_generator(indf, n_samples):
+
+def synthetic_data_generator(inarr, n_samples):
     """
-    Given an input dataframe, the function returns a new dataframe containing random numbers
+    Given an input numpy array, the function returns a new array containing random numbers
     generated within the value ranges of the input attributes.
     :param indf:
     :param n_samples: integer number of samples to be generated
     :return: outdf: of synthetic data
     """
-    outdf = pd.DataFrame()
-    for column in indf.columns.tolist():
-        minvalue = indf.min()[column]
-        maxvalue = indf.max()[column]
-        outdf[column] = np.round(np.random.uniform(minvalue,maxvalue,n_samples),1)
-    return outdf
+    outshape = (n_samples, inarr.shape[1])
+    outarr = np.zeros(outshape)
+    for column in range(inarr.shape[1]):
+        minvalue = min(inarr[:, column])
+        maxvalue = max(inarr[:, column])
+        outarr[:, column] = np.round(np.random.uniform(minvalue, maxvalue, n_samples), 1)
+    return outarr
+
+
+def print_decision_tree(tree, feature_names=None, offset_unit='    '):
+    """Plots textual representation of rules of a decision tree
+    tree: scikit-learn representation of tree
+    feature_names: list of feature names. They are set to f1,f2,f3,... if not specified
+    offset_unit: a string of offset of the conditional block"""
+
+    left = tree.tree_.children_left
+    right = tree.tree_.children_right
+    threshold = tree.tree_.threshold
+    value = tree.tree_.value
+    if feature_names is None:
+        features = ['f%d'%i for i in tree.tree_.feature]
+    else:
+        features = [feature_names[i] for i in tree.tree_.feature]
+
+    def recurse(left, right, threshold, features, node, depth=0):
+            offset = offset_unit*depth
+            if threshold[node] != -2:
+                    print(offset+"if ( " + features[node] + " <= " + str(threshold[node]) + " ) {")
+                    if left[node] != -1:
+                            recurse (left, right, threshold, features, left[node], depth+1)
+                    print(offset+"} else {")
+                    if right[node] != -1:
+                            recurse (left, right, threshold, features, right[node], depth+1)
+                    print(offset+"}")
+            else:
+                    print(offset+"class: " + str(np.argmax(value[node])))
+
+    recurse(left, right, threshold, features, 0, 0)
 
 
 # Main code
 data = arff.loadarff('datasets-UCI/UCI/iris.arff')
 data = pd.DataFrame(data[0])
-
 
 # Separating independent variables from the target one
 X = data.drop(columns=['class']).to_numpy()
@@ -116,3 +149,16 @@ print(accuracy_score(ensemble_res[0], y))
 synth_samples = X.shape[0] * 2
 xSynth = synthetic_data_generator(X, synth_samples)
 ySynth = ensemble_predictions(members, xSynth)
+
+# Concatenate the synthetic array and the array with the labels predicted by the ensemble
+xTot = np.concatenate((X, xSynth), axis=0)
+yTot = np.transpose(np.concatenate([ensemble_res, ySynth], axis=1))
+
+# This uses the CART algorithm (see https://scikit-learn.org/stable/modules/tree.html)
+clf = DecisionTreeClassifier()
+clf = clf.fit(xTot, yTot)
+rules = export_text(clf)
+
+# Showing the rules
+print_decision_tree(clf)
+print(rules)
