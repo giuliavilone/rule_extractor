@@ -11,14 +11,13 @@ import sys
 
 dataset_folder = 'datasets-UCI/'
 dataset = utils.load_dataset('adult', balance=True, dataset_folder=dataset_folder, discretize=True)
-print(dir(dataset))
-print(dataset.labels_train)
-print(dataset.train)
-print(dataset.class_names)
-print(dataset.feature_names)
-print(dataset.categorical_names)
+# print(dir(dataset))
+print(dataset.labels_test)
+print(dataset.test)
+# print(dataset.class_names)
+# print(dataset.feature_names)
+# print(dataset.categorical_names)
 
-sys.exit()
 c = RandomForestClassifier(n_estimators=50, n_jobs=5)
 c.fit(dataset.train, dataset.labels_train)
 print('Train', sklearn.metrics.accuracy_score(dataset.labels_train, c.predict(dataset.train)))
@@ -30,6 +29,8 @@ explainer = anchor_tabular.AnchorTabularExplainer(
     dataset.train,
     dataset.categorical_names
 )
+
+print(dir(explainer))
 
 idx = 0
 np.random.seed(1)

@@ -25,15 +25,25 @@ def create_model (trainX, trainY, num_classes):
     return model
 
 def vote_db_modifier(indf):
+    """
+    Modify the vote database by replacing yes/no answers with boolean
+    :type indf: Pandas dataframe
+    """
     indf.replace(b'y', 1, inplace=True)
     indf.replace(b'n', 0, inplace=True)
     indf.replace(b'?', 0, inplace=True)
     return indf
 
+def perturbator(indf, mu=0, sigma=0.1):
+    """
+    Add white noise to input dataset
+    :type indf: Pandas dataframe
+    """
+    noise = np.random.normal(mu, sigma, indf.shape)
+    return indf + noise
 
 
 data = arff.loadarff('datasets-UCI/UCI/vote.arff')
-
 data = pd.DataFrame(data[0])
 X = data.drop(columns=['physician-fee-freeze', 'Class'])
 le = LabelEncoder()
@@ -47,7 +57,6 @@ skf = StratifiedKFold(n_splits=n_cross_val, random_state=7, shuffle=True)
 
 
 fold_var = 1
-#build oracle
 for train_index, val_index in skf.split(X,y):
     print('Working on model number ' + str(fold_var))
     X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
@@ -65,21 +74,32 @@ for train_index, val_index in skf.split(X,y):
     root = tree_obj.build_tree()
     tree_obj.assign_levels(root, 0)
     tree_obj.print_tree_levels(root)
-    # calculate fidelity
+    # calculate metrics
     num_test_examples = X_test.shape[0]
     correct = 0
+    fidel = 0
+    rob = 0
     predi_tree = []
     predi_torch = np.argmax(model.predict(X_test), axis=1)
+    perturbed_data = perturbator(X_test)
+    perturbed_labels = np.argmax(model.predict(perturbed_data), axis=1)
     for i in range(0, num_test_examples):
         instance = X_test[i, :]
         instance_label = tree_obj.predict(instance, root)
         predi_tree.append(instance_label)
-        correct += (instance_label == predi_torch[i])
+        fidel += (instance_label == predi_torch[i])
+        correct += (instance_label == y_test[i])
+        perturbed_instance = perturbed_data[i, :]
+        perturbed_instance_label = tree_obj.predict(perturbed_instance, root)
+        rob += (instance_label == perturbed_instance_label)
 
-    predi_tree = np.array(predi_tree)
-    print(predi_tree)
-    print(predi_torch)
+    fidelity = fidel / num_test_examples
+    print("Fidelity of the ruleset is : " + str(fidelity))
+    completeness = len(predi_tree) / num_test_examples
+    print("Completeness of the ruleset is : " + str(completeness))
+    correctness = correct / num_test_examples
+    print("Correctness of the ruleset is : " + str(correctness))
+    robustness = rob / num_test_examples
+    print("Robustness of the ruleset is : " + str(robustness))
 
-    fidelity = correct / num_test_examples
-    print("Fidelity of the model is : " + str(fidelity))
     fold_var += 1
