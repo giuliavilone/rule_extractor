@@ -12,8 +12,8 @@ import sys
 dataset_folder = 'datasets-UCI/'
 dataset = utils.load_dataset('adult', balance=True, dataset_folder=dataset_folder, discretize=True)
 # print(dir(dataset))
-print(dataset.labels_test)
-print(dataset.test)
+# print(dataset.labels_test)
+# print(dataset.test)
 # print(dataset.class_names)
 # print(dataset.feature_names)
 # print(dataset.categorical_names)
@@ -32,10 +32,12 @@ explainer = anchor_tabular.AnchorTabularExplainer(
 
 print(dir(explainer))
 
+print(len(dataset.test))
 idx = 0
 np.random.seed(1)
 print('Prediction: ', explainer.class_names[c.predict(dataset.test[idx].reshape(1, -1))[0]])
 exp = explainer.explain_instance(dataset.test[idx], c.predict, threshold=0.95)
+# Anchor does not make predictions, so metrics cannot be calculated.
 print('Anchor: %s' % (' AND '.join(exp.names())))
 print('Precision: %.2f' % exp.precision())
 print('Coverage: %.2f' % exp.coverage())

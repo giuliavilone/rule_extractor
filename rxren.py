@@ -127,6 +127,13 @@ def rule_evaluator(train_x, train_y, rule_list, class_list):
     return rule_accuracy, ret_rules
 
 
+def perturbator(indf, mu=0, sigma=0.1):
+    """
+    Add white noise to input dataset
+    :type indf: Pandas dataframe
+    """
+    noise = np.random.normal(mu, sigma, indf.shape)
+    return indf + noise
 
 # Main code
 data = arff.loadarff('datasets-UCI/UCI/diabetes.arff')
@@ -175,16 +182,52 @@ miss_list, ins_index, new_accuracy, err = network_pruning(weights, correctX, cor
 significant_index = [i for i in range(weights[0].shape[0]) if i not in ins_index]
 print(new_accuracy)
 rule_limits = rule_limits_calculator(correctX, correcty, miss_list, significant_index, err, alpha=0.5)
-print(rule_limits)
+# print(rule_limits)
 
 rule_simplifier = True
 old_rule_acc = new_accuracy
+new_limits = []
 while rule_simplifier:
     rule_acc, new_limits = rule_evaluator(X_train, y_train, rule_limits, np.unique(y))
-    print(rule_acc)
-    print(new_limits)
-    new_limits[0]['limits'] = new_limits[0].pop('new_limits')
     if rule_acc > old_rule_acc:
         old_rule_acc = rule_acc
     else:
         rule_simplifier = False
+    new_limits[0]['limits'] = new_limits[0].pop('new_limits')
+
+print(new_limits)
+predicted_labels = np.argmax(model.predict(X_test), axis=1)
+
+num_test_examples = X_test.shape[0]
+perturbed_data = perturbator(X_test)
+rule_labels = np.empty(num_test_examples)
+rule_labels[:] = np.nan
+perturbed_labels = np.empty(num_test_examples)
+perturbed_labels[:] = np.nan
+for rule in new_limits:
+    neuron = X_test[:, rule['neuron']]
+    indexes = np.where((neuron >= rule['limits'][0]) & (neuron <= rule['limits'][1]))
+    rule_labels[indexes] = rule['class']
+    p_neuron = perturbed_data[:, rule['neuron']]
+    indexes = np.where((p_neuron >= rule['limits'][0]) & (p_neuron <= rule['limits'][1]))
+    perturbed_labels[indexes] = rule['class']
+
+rule_labels[np.where(np.isnan(rule_labels))] = 1
+perturbed_labels[np.where(np.isnan(perturbed_labels))] = 1
+
+correct = 0
+fidel = 0
+rob = 0
+for i in range(0, num_test_examples):
+    fidel += (rule_labels[i] == predicted_labels[i])
+    correct += (rule_labels[i] == y_test[i])
+    rob += (predicted_labels[i] == perturbed_labels[i])
+
+fidelity = fidel / num_test_examples
+print("Fidelity of the ruleset is : " + str(fidelity))
+completeness = len(rule_labels) / num_test_examples
+print("Completeness of the ruleset is : " + str(completeness))
+correctness = correct / num_test_examples
+print("Correctness of the ruleset is : " + str(correctness))
+robustness = rob / num_test_examples
+print("Robustness of the ruleset is : " + str(robustness))
