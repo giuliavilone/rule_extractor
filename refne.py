@@ -3,13 +3,14 @@ from scipy.stats import mode
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import accuracy_score
+from sklearn.utils import resample
 from keras.utils import to_categorical
 from keras.models import Sequential
 from keras.layers import Dense
 from keras.callbacks import ModelCheckpoint
 from keras.models import load_model
 import numpy as np
-from sklearn.metrics import accuracy_score
 import sys
 from collections import Counter
 import random
@@ -197,6 +198,30 @@ def rule_maker(df, intervals):
         ret.append(new_dict)
     return ret
 
+def perturbator(indf, mu=0, sigma=0.1):
+    """
+    Add white noise to input dataset
+    :type indf: Pandas dataframe
+    """
+    noise = np.random.normal(mu, sigma, indf.shape)
+    return indf + noise
+
+def rule_applier(indf, iny, rules):
+    """
+    Apply the input rules to the list of labels iny according to the rule conditions on indf
+    :param indf:
+    :param iny:
+    :param rules:
+    :return: iny
+    """
+    indexes = []
+    for r in range(len(rules['neuron'])):
+        x = indf[rules['neuron'][r]]
+        ix = np.where((x >= rules['limits'][r][0][0]) & (x <= rules['limits'][r][0][1]))[0]
+        indexes = [x for x in ix if x not in indexes]
+
+    iny[indexes] = rule['class']
+    return iny
 
 # Main code
 data, meta = arff.loadarff('datasets-UCI/UCI/iris.arff')
@@ -213,6 +238,9 @@ for item in range(len(meta.names())):
 X = data.drop(columns=['class'])
 y = data['class']
 
+# Extracting the classes to be predicted
+classes = y.unique()
+
 # Create the object to perform cross validation
 skf = StratifiedKFold(n_splits=n_members, random_state=7, shuffle=True)
 
@@ -224,20 +252,28 @@ model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accur
 
 # Training the model on the 5 cross validation datasets
 fold_var = 1
-for train_index, val_index in skf.split(X, y):
+model_train = False
+if model_train:
+    for train_index, val_index in skf.split(X, y):
+        X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
+        y_train, y_test = y[train_index], y[val_index]
+        checkpointer = ModelCheckpoint(filepath='model_' + str(fold_var) + '.h5',
+                                       save_weights_only=False,
+                                       monitor='loss',
+                                       save_best_only=True,
+                                       verbose=1)
+        history = model.fit(X_train, to_categorical(y_train, num_classes=3),
+                            validation_data=(X_test, to_categorical(y_test, num_classes=3)),
+                            epochs=50,
+                            callbacks=[checkpointer])
+
+        fold_var += 1
+else:
+    ix = [i for i in range(len(X))]
+    train_index = resample(ix, replace=True, n_samples=int(len(X) * 0.7), random_state=0)
+    val_index = [x for x in ix if x not in train_index]
     X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
     y_train, y_test = y[train_index], y[val_index]
-    checkpointer = ModelCheckpoint(filepath='model_' + str(fold_var) + '.h5',
-                                   save_weights_only=False,
-                                   monitor='loss',
-                                   save_best_only=True,
-                                   verbose=1)
-    history = model.fit(X_train, to_categorical(y_train, num_classes=3),
-                        validation_data=(X_test, to_categorical(y_test, num_classes=3)),
-                        epochs=50,
-                        callbacks=[checkpointer])
-
-    fold_var += 1
 
 # load all models
 members = load_all_models(n_members)
@@ -264,3 +300,40 @@ for attr in attr_list:
 
 final_rules = rule_maker(totSynth, interv_dict)
 print(final_rules)
+
+predicted_labels = np.argmax(model.predict(X_test), axis=1)
+
+num_test_examples = X_test.shape[0]
+perturbed_data = perturbator(X_test)
+rule_labels = np.empty(num_test_examples)
+rule_labels[:] = np.nan
+perturbed_labels = np.empty(num_test_examples)
+perturbed_labels[:] = np.nan
+
+for rule in final_rules:
+    neuron = X_test[rule['neuron']]
+    rule_labels = rule_applier(neuron, rule_labels, rule)
+    p_neuron = perturbed_data[rule['neuron']]
+    perturbed_labels = rule_applier(p_neuron, rule_labels, rule)
+
+completeness = sum(~np.isnan(rule_labels)) / num_test_examples
+print("Completeness of the ruleset is : " + str(completeness))
+
+rule_labels[np.where(np.isnan(rule_labels))] = max(classes) + 10
+perturbed_labels[np.where(np.isnan(perturbed_labels))] = max(classes) + 10
+
+correct = 0
+fidel = 0
+rob = 0
+y_test = y_test.tolist()
+for i in range(0, num_test_examples):
+    fidel += (rule_labels[i] == predicted_labels[i])
+    correct += (rule_labels[i] == y_test[i])
+    rob += (predicted_labels[i] == perturbed_labels[i])
+
+fidelity = fidel / num_test_examples
+print("Fidelity of the ruleset is : " + str(fidelity))
+correctness = correct / num_test_examples
+print("Correctness of the ruleset is : " + str(correctness))
+robustness = rob / num_test_examples
+print("Robustness of the ruleset is : " + str(robustness))
