@@ -16,14 +16,6 @@ import sys
 # Global variables
 n_members = 10
 
-#from sklearn.datasets import load_iris
-#from sklearn.tree import DecisionTreeClassifier
-#from sklearn.tree.export import export_text
-#iris = load_iris()
-#decision_tree = DecisionTreeClassifier(random_state=0, max_depth=2)
-#decision_tree = decision_tree.fit(iris.data, iris.target)
-#r = export_text(decision_tree, feature_names=iris['feature_names'])
-#print(r)
 
 # Functions
 def load_all_models(n_models):
@@ -103,6 +95,14 @@ def print_decision_tree(tree, feature_names=None, offset_unit='    '):
     recurse(left, right, threshold, features, 0, 0)
 
 
+def perturbator(indf, mu=0, sigma=0.1):
+    """
+    Add white noise to input dataset
+    :type indf: Pandas dataframe
+    """
+    noise = np.random.normal(mu, sigma, indf.shape)
+    return indf + noise
+
 # Main code
 data = arff.loadarff('datasets-UCI/UCI/iris.arff')
 data = pd.DataFrame(data[0])
@@ -162,3 +162,28 @@ rules = export_text(clf)
 # Showing the rules
 print_decision_tree(clf)
 print(rules)
+
+predicted_labels = clf.predict(X_test)
+model_test_labels = ensemble_predictions(members, X_test)[0]
+
+perturbed_data = perturbator(X_test)
+perturbed_labels = clf.predict(perturbed_data)
+
+num_test_examples = X_test.shape[0]
+correct = 0
+fidel = 0
+rob = 0
+
+for i in range(0, num_test_examples):
+    fidel += (predicted_labels[i] == model_test_labels[i])
+    correct += (predicted_labels[i] == y_test[i])
+    rob += (predicted_labels[i] == perturbed_labels[i])
+
+fidelity = fidel / num_test_examples
+print("Fidelity of the ruleset is : " + str(fidelity))
+completeness = len(predicted_labels) / num_test_examples
+print("Completeness of the ruleset is : " + str(completeness))
+correctness = correct / num_test_examples
+print("Correctness of the ruleset is : " + str(correctness))
+robustness = rob / num_test_examples
+print("Robustness of the ruleset is : " + str(robustness))

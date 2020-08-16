@@ -152,7 +152,49 @@ def select_random_item(int_list, ex_item_list):
     return new_item
 
 
-def rule_maker(df, intervals):
+def rule_evaluator(df, rule_columns, new_rule, ruleset, out_var, fidelity=0.5):
+    """
+    Evaluate the fidelity of the new rule
+    :param rule:
+    :return: boolean (true, false)
+    """
+    n_samples = len(df)
+    extra_samples = 0
+    all_columns = df.columns.values.tolist()
+    # Creating synthetics data within the limits set by the rule under evaluation
+    eval_df = df[rule_columns]
+    indexes = []
+    for col in rule_columns:
+        all_columns.remove(col)
+        ix = np.where(eval_df[col] == new_rule[col])[0]
+        indexes = [x for x in ix if x not in indexes]
+    eval_df = eval_df.iloc[indexes]
+    if len(eval_df) == 0:
+        return False
+    eval_df = synthetic_data_generator(eval_df, n_samples)
+    # Adding synthetics data on the columns that are not considered by the rule under evaluation
+    all_columns.remove(out_var)
+    other_df = df[all_columns]
+    other_df = synthetic_data_generator(other_df, n_samples)
+    tot_df = pd.concat([eval_df, other_df], axis=1).reset_index(drop=True)
+    # Removing the instances that are covered by the existing rules
+    if len(ruleset) > 0:
+        for eval_rule in ruleset:
+            for s in range(len(eval_rule['neuron'])):
+                x = tot_df[eval_rule['neuron'][s]]
+                ix = np.where((x < eval_rule['limits'][s][0][0]) | (x > eval_rule['limits'][s][0][1]))[0]
+                tot_df = tot_df.iloc[ix]
+        extra_samples = n_samples - len(tot_df)
+        if extra_samples > 0:
+            extra_df = synthetic_data_generator(tot_df, extra_samples)
+            tot_df = pd.concat([tot_df, extra_df], axis=0)
+    # Evaluating the fidelity of the rule under evaluation
+    tot_df[out_var] = np.argmax(model.predict(tot_df), axis=1)
+    agreement = len(tot_df[tot_df[out_var] == new_rule['max_class']]) / len(tot_df)
+    return agreement > fidelity
+
+
+def rule_maker(df, intervals, target_var):
     """
     Creates the IF-THEN rules
     :param df:
@@ -160,25 +202,25 @@ def rule_maker(df, intervals):
     """
     # Getting list of columns of input dataframe and randomly shuffling them
     col = df.columns.values.tolist()
-    col.remove('class')
+    col.remove(target_var)
     random.shuffle(col)
     ret = []
     for item in col:
-        attr_list = df[[item, 'class']].groupby(item).agg(unique_class=('class', 'nunique'),
-                                                          max_class=('class', 'max')
+        attr_list = df[[item, target_var]].groupby(item).agg(unique_class=(target_var, 'nunique'),
+                                                          max_class=(target_var, 'max')
                                                           ).reset_index(drop=False)
         new_rules = attr_list[attr_list['unique_class'] == 1]
         if len(new_rules) == 0:
             item1 = select_random_item(col, [item])
-            attr_list = df[[item, item1, 'class']].groupby([item, item1]).agg(unique_class=('class', 'nunique'),
-                                                                              max_class=('class', 'max')
+            attr_list = df[[item, item1, target_var]].groupby([item, item1]).agg(unique_class=(target_var, 'nunique'),
+                                                                              max_class=(target_var, 'max')
                                                                               ).reset_index(drop=False)
             new_rules = attr_list[attr_list['unique_class'] == 1]
             if len(new_rules) == 0:
                 item2 = select_random_item(col, [item, item1])
-                attr_list = df[[item, item1, item2, 'class']].groupby([item, item1, item2]).agg(
-                    unique_class=('class', 'nunique'),
-                    max_class=('class', 'max')
+                attr_list = df[[item, item1, item2, target_var]].groupby([item, item1, item2]).agg(
+                    unique_class=(target_var, 'nunique'),
+                    max_class=(target_var, 'max')
                 ).reset_index(drop=False)
                 new_rules = attr_list[attr_list['unique_class'] == 1]
                 if len(new_rules) == 0:
@@ -187,16 +229,24 @@ def rule_maker(df, intervals):
         new_col.remove('unique_class')
         new_col.remove('max_class')
         for index, row in new_rules.iterrows():
-            new_dict = {'neuron':new_col}
-            new_dict['class'] = row['max_class'].tolist()
-            rule_intervals = []
-            for c in new_col:
-                interv = intervals[c]
-                rule_int = [item for item in interv if item[0] == row[c]]
-                rule_intervals.append(rule_int)
-            new_dict['limits'] = rule_intervals
-        ret.append(new_dict)
-    return ret
+            # Evaluate the fidelity of the new rule
+            evaluation = rule_evaluator(df, new_col, row, ret, target_var, fidelity=0.5)
+            if evaluation:
+                new_dict = {'neuron':new_col}
+                new_dict[target_var] = row['max_class'].tolist()
+                rule_intervals = []
+                for c in new_col:
+                    interv = intervals[c]
+                    rule_int = [item for item in interv if item[0] == row[c]]
+                    x = df[c]
+                    ix = np.where((x < rule_int[0][0]) | (x > rule_int[0][1]))[0]
+                    df = df.iloc[ix]
+                    rule_intervals.append(rule_int)
+                new_dict['limits'] = rule_intervals
+                ret.append(new_dict)
+            if len(df) == 0:
+                break
+    return ret, df
 
 def perturbator(indf, mu=0, sigma=0.1):
     """
@@ -206,7 +256,7 @@ def perturbator(indf, mu=0, sigma=0.1):
     noise = np.random.normal(mu, sigma, indf.shape)
     return indf + noise
 
-def rule_applier(indf, iny, rules):
+def rule_applier(indf, iny, rules, target_var):
     """
     Apply the input rules to the list of labels iny according to the rule conditions on indf
     :param indf:
@@ -220,23 +270,31 @@ def rule_applier(indf, iny, rules):
         ix = np.where((x >= rules['limits'][r][0][0]) & (x <= rules['limits'][r][0][1]))[0]
         indexes = [x for x in ix if x not in indexes]
 
-    iny[indexes] = rule['class']
+    iny[indexes] = rule[target_var]
     return iny
 
 # Main code
 data, meta = arff.loadarff('datasets-UCI/UCI/iris.arff')
+label_col = 'class'
 data = pd.DataFrame(data)
 le = LabelEncoder()
+discrete_attributes = []
+continuous_attributes = []
+
 # Encoding the nominal fields
 for item in range(len(meta.names())):
     item_name = meta.names()[item]
     item_type = meta.types()[item]
     if item_type == 'nominal':
         data[item_name] = le.fit_transform(data[item_name].tolist())
+        if item_name != label_col:
+            discrete_attributes.append(item_name)
+    else:
+        continuous_attributes.append(item_name)
 
 # Separating independent variables from the target one
-X = data.drop(columns=['class'])
-y = data['class']
+X = data.drop(columns=[label_col])
+y = data[label_col]
 
 # Extracting the classes to be predicted
 classes = y.unique()
@@ -252,7 +310,7 @@ model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accur
 
 # Training the model on the 5 cross validation datasets
 fold_var = 1
-model_train = False
+model_train = True
 if model_train:
     for train_index, val_index in skf.split(X, y):
         X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
@@ -290,17 +348,32 @@ ySynth = ensemble_predictions(members, xSynth)
 
 # Discretizing the continuous attributes
 attr_list = xSynth.columns.tolist()
-totSynth = xSynth
-totSynth['class'] = ySynth[0]
+xSynth[label_col] = ySynth[0]
 interv_dict = {}
 for attr in attr_list:
-    interv = chimerge(data=totSynth, attr=attr, label='class')
-    totSynth[attr] = discretizer(totSynth[attr], interv)
-    interv_dict[attr] = interv
+    if attr in continuous_attributes:
+        interv = chimerge(data=xSynth, attr=attr, label=label_col)
+        xSynth[attr] = discretizer(xSynth[attr], interv)
+        interv_dict[attr] = interv
+    else:
+        unique_values = np.unique(xSynth[attr]).tolist()
+        interv_dict[attr] = zip(unique_values, unique_values)
 
-final_rules = rule_maker(totSynth, interv_dict)
+final_rules = []
+if len(discrete_attributes) > 0:
+    discreteSynth = xSynth[discrete_attributes]
+    discreteSynth[label_col] = ySynth[0]
+    out_rule, discreteSynth = rule_maker(discreteSynth, interv_dict, label_col)
+    final_rules += out_rule
+else:
+    contSynth = xSynth[continuous_attributes]
+    contSynth[label_col] = ySynth[0]
+    out_rule, contSynth = rule_maker(contSynth, interv_dict, label_col)
+    final_rules += out_rule
+
 print(final_rules)
 
+# Calculation of metrics
 predicted_labels = np.argmax(model.predict(X_test), axis=1)
 
 num_test_examples = X_test.shape[0]
@@ -312,9 +385,9 @@ perturbed_labels[:] = np.nan
 
 for rule in final_rules:
     neuron = X_test[rule['neuron']]
-    rule_labels = rule_applier(neuron, rule_labels, rule)
+    rule_labels = rule_applier(neuron, rule_labels, rule, label_col)
     p_neuron = perturbed_data[rule['neuron']]
-    perturbed_labels = rule_applier(p_neuron, rule_labels, rule)
+    perturbed_labels = rule_applier(p_neuron, rule_labels, rule, label_col)
 
 completeness = sum(~np.isnan(rule_labels)) / num_test_examples
 print("Completeness of the ruleset is : " + str(completeness))
