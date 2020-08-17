@@ -6,19 +6,20 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import accuracy_score
 from sklearn.utils import resample
 from keras.utils import to_categorical
-from keras.models import Sequential
-from keras.layers import Dense
-from keras.callbacks import ModelCheckpoint
 from keras.models import load_model
 import numpy as np
-import sys
+from common_functions import perturbator, create_model, model_trainer
 from collections import Counter
 import random
 import copy
 
 # Global variables
+data, meta = arff.loadarff('datasets-UCI/UCI/iris.arff')
+label_col = 'class'
+data = pd.DataFrame(data)
 n_members = 5
-
+n_classes = 3
+hidden_neurons = 3
 
 # Functions
 def load_all_models(n_models):
@@ -248,13 +249,6 @@ def rule_maker(df, intervals, target_var):
                 break
     return ret, df
 
-def perturbator(indf, mu=0, sigma=0.1):
-    """
-    Add white noise to input dataset
-    :type indf: Pandas dataframe
-    """
-    noise = np.random.normal(mu, sigma, indf.shape)
-    return indf + noise
 
 def rule_applier(indf, iny, rules, target_var):
     """
@@ -274,9 +268,6 @@ def rule_applier(indf, iny, rules, target_var):
     return iny
 
 # Main code
-data, meta = arff.loadarff('datasets-UCI/UCI/iris.arff')
-label_col = 'class'
-data = pd.DataFrame(data)
 le = LabelEncoder()
 discrete_attributes = []
 continuous_attributes = []
@@ -303,10 +294,7 @@ classes = y.unique()
 skf = StratifiedKFold(n_splits=n_members, random_state=7, shuffle=True)
 
 # define model
-model = Sequential()
-model.add(Dense(20, input_dim=X.shape[-1], activation='relu'))
-model.add(Dense(3, activation='softmax'))
-model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+model = create_model(X, n_classes, hidden_neurons)
 
 # Training the model on the 5 cross validation datasets
 fold_var = 1
@@ -315,15 +303,8 @@ if model_train:
     for train_index, val_index in skf.split(X, y):
         X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
         y_train, y_test = y[train_index], y[val_index]
-        checkpointer = ModelCheckpoint(filepath='model_' + str(fold_var) + '.h5',
-                                       save_weights_only=False,
-                                       monitor='loss',
-                                       save_best_only=True,
-                                       verbose=1)
-        history = model.fit(X_train, to_categorical(y_train, num_classes=3),
-                            validation_data=(X_test, to_categorical(y_test, num_classes=3)),
-                            epochs=50,
-                            callbacks=[checkpointer])
+        model_trainer(X_train, to_categorical(y_train, num_classes=n_classes),
+                      X_test, to_categorical(y_test, num_classes=n_classes), model, 'model_' + str(fold_var) + '.h5')
 
         fold_var += 1
 else:

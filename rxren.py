@@ -3,19 +3,20 @@ import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 from sklearn.utils import resample
 from keras.utils import to_categorical
-from keras.models import Sequential
-from keras.layers import Dense
-from keras.callbacks import ModelCheckpoint
 from keras.models import load_model
 import numpy as np
 from sklearn.metrics import accuracy_score
 import copy
-import sys
+from common_functions import perturbator, create_model, model_trainer
 
 # Global variable
 TOLERANCE = 0.01
 MODEL_NAME = 'rxren_model.h5'
 
+data = arff.loadarff('datasets-UCI/UCI/diabetes.arff')
+data = pd.DataFrame(data[0])
+n_classes = 2
+hidden_neurons = 3
 
 # Functions
 def input_delete(insignificant_index, inDf, inWeight=None):
@@ -35,8 +36,8 @@ def input_delete(insignificant_index, inDf, inWeight=None):
         outWeight[0] = np.delete(outWeight[0], insignificant_index, 0)
     return outDf, outWeight
 
-def model_pruned_prediction(inputX,w):
-    new_m = model_builder(w[0].shape[0])
+def model_pruned_prediction(inputX, w):
+    new_m = create_model(inputX, n_classes, hidden_neurons)
     new_m.set_weights(w)
     results = new_m.predict(inputX)
     results = np.argmax(results, axis=1)
@@ -81,13 +82,6 @@ def network_pruning(w, cX, cy, train_x, train_y, accuracy):
     return missclassified_list, sorted(insignificant_neurons), new_acc, theta
 
 
-def model_builder(input_shape):
-    mod = Sequential()
-    mod.add(Dense(3, input_dim=input_shape, activation='relu'))
-    mod.add(Dense(2, activation='softmax'))
-    mod.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
-    return mod
-
 def rule_limits_calculator(c_x, c_y, missclassified_list, significant_neurons, error, alpha=0.5):
     c_tot = np.column_stack((c_x, c_y))
     grouped_miss_class = []
@@ -127,31 +121,13 @@ def rule_evaluator(train_x, train_y, rule_list, class_list):
     return rule_accuracy, ret_rules
 
 
-def perturbator(indf, mu=0, sigma=0.1):
-    """
-    Add white noise to input dataset
-    :type indf: Pandas dataframe
-    """
-    noise = np.random.normal(mu, sigma, indf.shape)
-    return indf + noise
-
 # Main code
-data = arff.loadarff('datasets-UCI/UCI/diabetes.arff')
-data = pd.DataFrame(data[0])
 
 # Separating independent variables from the target one
 X = data.drop(columns=['class']).to_numpy()
 le = LabelEncoder()
 y = le.fit_transform(data['class'].tolist())
 
-# define model
-model = model_builder(X.shape[-1])
-
-checkpointer = ModelCheckpoint(filepath=MODEL_NAME,
-                                  save_weights_only=False,
-                                  monitor='loss',
-                                  save_best_only=True,
-                                  verbose=1)
 
 ix = [i for i in range(len(X))]
 train_index = resample(ix, replace=True, n_samples=int(len(X)*0.7), random_state=0)
@@ -159,12 +135,13 @@ val_index = [x for x in ix if x not in train_index]
 X_train, X_test = X[train_index], X[val_index]
 y_train, y_test = y[train_index], y[val_index]
 
-model_train = False
+# define model
+model = create_model(X, n_classes, hidden_neurons)
+
+model_train = True
 if model_train:
-    history = model.fit(X_train, to_categorical(y_train, num_classes=2),
-                            validation_data=(X_test, to_categorical(y_test, num_classes=2)),
-                            epochs=500,
-                            callbacks=[checkpointer])
+    model_trainer(X_train, to_categorical(y_train, num_classes=n_classes),
+                  X_test, to_categorical(y_test, num_classes=n_classes), model, MODEL_NAME)
 
 model = load_model(MODEL_NAME)
 weights = np.array(model.get_weights())

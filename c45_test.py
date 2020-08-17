@@ -3,19 +3,19 @@ import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 from sklearn.utils import resample
 from keras.utils import to_categorical
-from keras.models import Sequential
-from keras.layers import Dense
-from keras.callbacks import ModelCheckpoint
 from keras.models import load_model
 import numpy as np
 from scipy.stats import mode
 from sklearn.metrics import accuracy_score
-from sklearn.tree import DecisionTreeClassifier, export_text, export
-import sys
+from sklearn.tree import DecisionTreeClassifier, export_text
+from common_functions import perturbator, create_model, model_trainer
 
 # Global variables
 n_members = 10
-
+data = arff.loadarff('datasets-UCI/UCI/iris.arff')
+data = pd.DataFrame(data[0])
+n_classes = 3
+hidden_neurons = 3
 
 # Functions
 def load_all_models(n_models):
@@ -95,17 +95,7 @@ def print_decision_tree(tree, feature_names=None, offset_unit='    '):
     recurse(left, right, threshold, features, 0, 0)
 
 
-def perturbator(indf, mu=0, sigma=0.1):
-    """
-    Add white noise to input dataset
-    :type indf: Pandas dataframe
-    """
-    noise = np.random.normal(mu, sigma, indf.shape)
-    return indf + noise
-
 # Main code
-data = arff.loadarff('datasets-UCI/UCI/iris.arff')
-data = pd.DataFrame(data[0])
 
 # Separating independent variables from the target one
 X = data.drop(columns=['class']).to_numpy()
@@ -113,10 +103,7 @@ le = LabelEncoder()
 y = le.fit_transform(data['class'].tolist())
 
 # define model
-model = Sequential()
-model.add(Dense(20, input_dim=X.shape[-1], activation='relu'))
-model.add(Dense(3, activation='softmax'))
-model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+model = create_model(X, n_classes, hidden_neurons)
 
 fold_var = 1
 for _ in range(n_members):
@@ -126,15 +113,8 @@ for _ in range(n_members):
     val_index = [x for x in ix if x not in train_index]
     X_train, X_test = X[train_index], X[val_index]
     y_train, y_test = y[train_index], y[val_index]
-    checkpointer = ModelCheckpoint(filepath='c45_model_'+str(fold_var)+'.h5',
-                                  save_weights_only=False,
-                                  monitor='loss',
-                                  save_best_only=True,
-                                  verbose=1)
-    history = model.fit(X_train, to_categorical(y_train, num_classes=3),
-                        validation_data=(X_test, to_categorical(y_test, num_classes=3)),
-                        epochs=50,
-                        callbacks=[checkpointer])
+    model_trainer(X_train, to_categorical(y_train, num_classes=n_classes),
+                  X_test, to_categorical(y_test, num_classes=n_classes), model, 'c45_model_'+str(fold_var)+'.h5')
 
     fold_var += 1
 

@@ -1,28 +1,19 @@
-from keras.models import Sequential
-from keras.layers import Dense
 import pandas as pd
 from scipy.io import arff
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import LabelEncoder
 from keras.utils import to_categorical
 import numpy as np
-import sys
-
+from common_functions import create_model, model_trainer, perturbator
 from trepan import Tree, Oracle
 
+data = arff.loadarff('datasets-UCI/UCI/vote.arff')
+data = pd.DataFrame(data[0])
 n_cross_val = 10
 n_class = 2
+n_nodes = 4
 
 ###########################################
-
-def create_model (trainX, trainY, num_classes):
-    model = Sequential()
-    model.add(Dense(16, input_dim=trainX.shape[1], activation="sigmoid"))
-    model.add(Dense(16, activation="sigmoid"))
-    model.add(Dense(num_classes, activation="softmax"))
-    model.compile(loss="categorical_crossentropy", optimizer="adam", metrics=['accuracy'])
-    model.fit(trainX, trainY, epochs=50, batch_size=10) # epochs=150
-    return model
 
 def vote_db_modifier(indf):
     """
@@ -34,17 +25,7 @@ def vote_db_modifier(indf):
     indf.replace(b'?', 0, inplace=True)
     return indf
 
-def perturbator(indf, mu=0, sigma=0.1):
-    """
-    Add white noise to input dataset
-    :type indf: Pandas dataframe
-    """
-    noise = np.random.normal(mu, sigma, indf.shape)
-    return indf + noise
 
-
-data = arff.loadarff('datasets-UCI/UCI/vote.arff')
-data = pd.DataFrame(data[0])
 X = data.drop(columns=['physician-fee-freeze', 'Class'])
 le = LabelEncoder()
 y = le.fit_transform(data['Class'].tolist())
@@ -64,7 +45,9 @@ for train_index, val_index in skf.split(X,y):
     X_train = X_train.to_numpy()
     X_test = X_test.to_numpy()
     y_train = to_categorical(y_train, num_classes=n_class)
-    model = create_model(X_train, y_train, n_class)
+    y_test = to_categorical(y_test, num_classes=n_class)
+    model = create_model(X_train, n_class, n_nodes)
+    model = model_trainer(X_train, y_train, X_test, y_test, model, 'trepan_model.h5')
     oracle = Oracle(model, n_class, X_train)
     tree_obj = Tree(oracle)
 
@@ -83,6 +66,7 @@ for train_index, val_index in skf.split(X,y):
     predi_torch = np.argmax(model.predict(X_test), axis=1)
     perturbed_data = perturbator(X_test)
     perturbed_labels = np.argmax(model.predict(perturbed_data), axis=1)
+    y_test = np.argmax(y_test, axis=1)
     for i in range(0, num_test_examples):
         instance = X_test[i, :]
         instance_label = tree_obj.predict(instance, root)
