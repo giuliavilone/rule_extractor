@@ -156,7 +156,7 @@ class Tree:
         fidelity_n = self.get_fidelity(node)
         print(f"fidelity_n={fidelity_n}")
         priority = -1 * reach_n * (1 - fidelity_n)
-        return priority
+        return float(priority)
 
     def get_fidelity(self, node):
         # num_corr_predictions = 0
@@ -173,23 +173,25 @@ class Tree:
         node_queue = Q.PriorityQueue()
 
         self.root = self.construct_node(self.initial_data, self.initial_labels, Constraint())
+        node_queue.put((self.get_priority(self.root), self.num_nodes, self.root), block=False)
         self.num_nodes += 1
-        node_queue.put((self.get_priority(self.root), self.root), block=False)
 
         while not node_queue.empty() and self.num_nodes <= self.tree_params["tree_size"]:
             print("num_nodes = ", self.num_nodes)
-            priority, node = node_queue.get()
+            priority, _, node = node_queue.get()
             node = self.add_instances(node)
             node = self.split(node)
+            if node.left is None and node.right is None:
+                continue
+            else:
+                left_prio = self.get_priority(node.left)
+                right_prio = self.get_priority(node.right)
+                print("left_prio=", left_prio)
+                print("right_prio=", right_prio)
 
-            left_prio = self.get_priority(node.left)
-            right_prio = self.get_priority(node.right)
-            print("left_prio=", left_prio)
-            print("right_prio=", right_prio)
-
-            node_queue.put((left_prio, node.left), block=False)
-            node_queue.put((right_prio, node.right), block=False)
-            self.num_nodes += 2
+                node_queue.put((left_prio, self.num_nodes + 1, node.left), block=False)
+                node_queue.put((right_prio, self.num_nodes + 2, node.right), block=False)
+                self.num_nodes += 2
 
         return self.root
 
@@ -232,22 +234,25 @@ class Tree:
     def split(self, node):
         """Decide the best split and split the node """
         best_feat, best_split_point = self.get_best_split(node)
+        if best_feat is None:
+            node.left = None
+            node.right = None
+        else:
+            left_ind = node.data[:, best_feat] <= best_split_point
+            right_ind = node.data[:, best_feat] > best_split_point
 
-        left_ind = node.data[:, best_feat] <= best_split_point
-        right_ind = node.data[:, best_feat] > best_split_point
+            left_constraints = copy.deepcopy(node.constraints)
+            right_constraints = copy.deepcopy(node.constraints)
+            left_rule = f"x{best_feat} <= {best_split_point}"
+            right_rule = f"x{best_feat} > {best_split_point}"
 
-        left_constraints = copy.deepcopy(node.constraints)
-        right_constraints = copy.deepcopy(node.constraints)
-        left_rule = f"x{best_feat} <= {best_split_point}"
-        right_rule = f"x{best_feat} > {best_split_point}"
+            left_constraints.add_rule(left_rule)
+            right_constraints.add_rule(right_rule)
 
-        left_constraints.add_rule(left_rule)
-        right_constraints.add_rule(right_rule)
+            node.left = self.construct_node(node.data[left_ind], node.labels[left_ind], left_constraints)
+            node.right = self.construct_node(node.data[right_ind], node.labels[right_ind], right_constraints)
 
-        node.left = self.construct_node(node.data[left_ind], node.labels[left_ind], left_constraints)
-        node.right = self.construct_node(node.data[right_ind], node.labels[right_ind], right_constraints)
-
-        node.split_rule = left_rule
+            node.split_rule = left_rule
 
         return node
 
@@ -256,8 +261,11 @@ class Tree:
         return np.mean((data - mean) ** 2)
 
     def feature_split(self, feature_data):
-        split_points = np.linspace(start=0, stop=1, num=self.tree_params["num_feature_splits"])[1:-1]
+        split_points = np.linspace(start=min(feature_data), stop=max(feature_data),
+                                   num=self.tree_params["num_feature_splits"]
+                                   )[1:-1]
         min_mse = float("inf")
+        mse = float("inf")
         best_split_point = None
 
         for split_point in split_points:

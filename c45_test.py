@@ -9,13 +9,24 @@ from scipy.stats import mode
 from sklearn.metrics import accuracy_score
 from sklearn.tree import DecisionTreeClassifier, export_text
 from common_functions import perturbator, create_model, model_trainer
+import sys
 
 # Global variables
 n_members = 10
-data = arff.loadarff('datasets-UCI/UCI/iris.arff')
-data = pd.DataFrame(data[0])
-n_classes = 3
-hidden_neurons = 3
+data, meta = arff.loadarff('datasets-UCI/UCI/hepatitis.arff')
+data = pd.DataFrame(data)
+data = data.dropna()
+
+le = LabelEncoder()
+for item in range(len(meta.names())):
+    item_name = meta.names()[item]
+    item_type = meta.types()[item]
+    if item_type == 'nominal':
+        data[item_name] = le.fit_transform(data[item_name].tolist())
+
+target_var = 'Class'
+n_classes = 2
+hidden_neurons = 4
 
 # Functions
 def load_all_models(n_models):
@@ -98,9 +109,9 @@ def print_decision_tree(tree, feature_names=None, offset_unit='    '):
 # Main code
 
 # Separating independent variables from the target one
-X = data.drop(columns=['class']).to_numpy()
-le = LabelEncoder()
-y = le.fit_transform(data['class'].tolist())
+X = data.drop(columns=[target_var]).to_numpy()
+y = le.fit_transform(data[target_var].tolist())
+
 
 # define model
 model = create_model(X, n_classes, hidden_neurons)

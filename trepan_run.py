@@ -6,12 +6,23 @@ from keras.utils import to_categorical
 import numpy as np
 from common_functions import create_model, model_trainer, perturbator
 from trepan import Tree, Oracle
+import sys
 
-data = arff.loadarff('datasets-UCI/UCI/vote.arff')
-data = pd.DataFrame(data[0])
+data, meta = arff.loadarff('datasets-UCI/UCI/iris.arff')
+label_col = 'class'
+data = pd.DataFrame(data)
+data = data.dropna().reset_index(drop=True)
+
+le = LabelEncoder()
+for item in range(len(meta.names())):
+    item_name = meta.names()[item]
+    item_type = meta.types()[item]
+    if item_type == 'nominal':
+        data[item_name] = le.fit_transform(data[item_name].tolist())
+
 n_cross_val = 10
-n_class = 2
-n_nodes = 4
+n_class = 3
+n_nodes = 3
 
 ###########################################
 
@@ -26,9 +37,10 @@ def vote_db_modifier(indf):
     return indf
 
 
-X = data.drop(columns=['physician-fee-freeze', 'Class'])
+# X = data.drop(columns=['physician-fee-freeze', label_col])
+X = data.drop(columns=[label_col])
 le = LabelEncoder()
-y = le.fit_transform(data['Class'].tolist())
+y = le.fit_transform(data[label_col].tolist())
 
 # Replacing yes/no answers with 1/0
 X = vote_db_modifier(X)
@@ -39,7 +51,6 @@ skf = StratifiedKFold(n_splits=n_cross_val, random_state=7, shuffle=True)
 
 fold_var = 1
 for train_index, val_index in skf.split(X,y):
-    print('Working on model number ' + str(fold_var))
     X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
     y_train, y_test = y[train_index], y[val_index]
     X_train = X_train.to_numpy()

@@ -14,11 +14,20 @@ import random
 import copy
 
 # Global variables
-data, meta = arff.loadarff('datasets-UCI/UCI/iris.arff')
-label_col = 'class'
+data, meta = arff.loadarff('datasets-UCI/UCI/hepatitis.arff')
+label_col = 'Class'
 data = pd.DataFrame(data)
+data = data.dropna().reset_index(drop=True)
+
+le = LabelEncoder()
+for item in range(len(meta.names())):
+    item_name = meta.names()[item]
+    item_type = meta.types()[item]
+    if item_type == 'nominal':
+        data[item_name] = le.fit_transform(data[item_name].tolist())
+
 n_members = 5
-n_classes = 3
+n_classes = 2
 hidden_neurons = 3
 
 # Functions
@@ -332,6 +341,7 @@ attr_list = xSynth.columns.tolist()
 xSynth[label_col] = ySynth[0]
 interv_dict = {}
 for attr in attr_list:
+    print(attr)
     if attr in continuous_attributes:
         interv = chimerge(data=xSynth, attr=attr, label=label_col)
         xSynth[attr] = discretizer(xSynth[attr], interv)
@@ -340,6 +350,7 @@ for attr in attr_list:
         unique_values = np.unique(xSynth[attr]).tolist()
         interv_dict[attr] = zip(unique_values, unique_values)
 
+print(interv_dict)
 final_rules = []
 if len(discrete_attributes) > 0:
     discreteSynth = xSynth[discrete_attributes]

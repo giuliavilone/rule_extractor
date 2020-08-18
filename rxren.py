@@ -13,8 +13,17 @@ from common_functions import perturbator, create_model, model_trainer
 TOLERANCE = 0.01
 MODEL_NAME = 'rxren_model.h5'
 
-data = arff.loadarff('datasets-UCI/UCI/diabetes.arff')
-data = pd.DataFrame(data[0])
+data, meta = arff.loadarff('datasets-UCI/UCI/hepatitis.arff')
+label_col = 'Class'
+data = pd.DataFrame(data)
+data = data.dropna()
+le = LabelEncoder()
+for item in range(len(meta.names())):
+    item_name = meta.names()[item]
+    item_type = meta.types()[item]
+    if item_type == 'nominal':
+        data[item_name] = le.fit_transform(data[item_name].tolist())
+
 n_classes = 2
 hidden_neurons = 3
 
@@ -36,12 +45,14 @@ def input_delete(insignificant_index, inDf, inWeight=None):
         outWeight[0] = np.delete(outWeight[0], insignificant_index, 0)
     return outDf, outWeight
 
+
 def model_pruned_prediction(inputX, w):
     new_m = create_model(inputX, n_classes, hidden_neurons)
     new_m.set_weights(w)
     results = new_m.predict(inputX)
     results = np.argmax(results, axis=1)
     return results
+
 
 def network_pruning(w, cX, cy, train_x, train_y, accuracy):
     """
@@ -96,17 +107,21 @@ def rule_limits_calculator(c_x, c_y, missclassified_list, significant_neurons, e
     return grouped_miss_class
 
 def rule_evaluator(train_x, train_y, rule_list, class_list):
-    predicted_y = np.empty((train_y.shape))
+    predicted_y = np.empty(train_y.shape)
     predicted_y[:] = np.NaN
+    class_list = class_list.tolist()
     for rule in rule_list:
-        if rule['class'] in class_list[:]:
-            class_list = np.delete(class_list, rule['class'])
+        if rule['class'] in class_list and len(class_list) > 0:
+            class_list.remove(rule['class'])
         col = rule['neuron']
         minimum = rule['limits'][0]
         maximum = rule['limits'][1]
         predicted_y[(train_x[:, col] >= minimum) * (train_x[:, col] <= maximum)] = int(rule['class'])
     if len(class_list) == 1:
         predicted_y[np.isnan(predicted_y)] = class_list[0]
+    elif len(class_list) == 0:
+        # Just in case the rules do not cover the entire dataset
+        predicted_y[np.isnan(predicted_y)] = n_classes + 10
     else:
         print("It is not possible to identify default class")
     rule_accuracy = accuracy_score(predicted_y, train_y)
@@ -124,9 +139,8 @@ def rule_evaluator(train_x, train_y, rule_list, class_list):
 # Main code
 
 # Separating independent variables from the target one
-X = data.drop(columns=['class']).to_numpy()
-le = LabelEncoder()
-y = le.fit_transform(data['class'].tolist())
+X = data.drop(columns=[label_col]).to_numpy()
+y = le.fit_transform(data[label_col].tolist())
 
 
 ix = [i for i in range(len(X))]
@@ -159,7 +173,6 @@ miss_list, ins_index, new_accuracy, err = network_pruning(weights, correctX, cor
 significant_index = [i for i in range(weights[0].shape[0]) if i not in ins_index]
 print(new_accuracy)
 rule_limits = rule_limits_calculator(correctX, correcty, miss_list, significant_index, err, alpha=0.5)
-# print(rule_limits)
 
 rule_simplifier = True
 old_rule_acc = new_accuracy
@@ -192,6 +205,7 @@ for rule in new_limits:
 rule_labels[np.where(np.isnan(rule_labels))] = 1
 perturbed_labels[np.where(np.isnan(perturbed_labels))] = 1
 
+complete = 0
 correct = 0
 fidel = 0
 rob = 0
@@ -199,10 +213,11 @@ for i in range(0, num_test_examples):
     fidel += (rule_labels[i] == predicted_labels[i])
     correct += (rule_labels[i] == y_test[i])
     rob += (predicted_labels[i] == perturbed_labels[i])
+    complete += (rule_labels[i] == n_classes + 10)
 
 fidelity = fidel / num_test_examples
 print("Fidelity of the ruleset is : " + str(fidelity))
-completeness = len(rule_labels) / num_test_examples
+completeness = 1 - complete / num_test_examples
 print("Completeness of the ruleset is : " + str(completeness))
 correctness = correct / num_test_examples
 print("Correctness of the ruleset is : " + str(correctness))
