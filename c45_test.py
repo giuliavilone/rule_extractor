@@ -9,7 +9,6 @@ from scipy.stats import mode
 from sklearn.metrics import accuracy_score
 from sklearn.tree import DecisionTreeClassifier, export_text
 from common_functions import perturbator, create_model, model_trainer
-import sys
 
 # Global variables
 n_members = 10
