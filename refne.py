@@ -96,7 +96,7 @@ def chimerge(data, attr, label):
             lab1 = sorted(set(data[label][data[attr].between(intervals[i + 1][0], intervals[i + 1][1])]))
             # if len(lab0) + len(lab1) > 2 or lab0 != lab1:
             if lab0 != lab1:
-                chi.append(1000.0)
+                chi.append(1000000.0)
                 continue
             else:
                 # Calculate the Chi2 value
@@ -111,23 +111,19 @@ def chimerge(data, attr, label):
                 chi_ = (count_0 - expected_0) ** 2 / expected_0 + (count_1 - expected_1) ** 2 / expected_1
                 chi_ = np.nan_to_num(chi_)  # Deal with the zero counts
                 chi.append(sum(chi_))  # Finally do the summation for Chi2
-
         min_chi = min(chi)  # Find the minimal Chi2 for current iteration
-        if min_chi == 1000.0:
+        if min_chi == 1000000.0:
             break
-        min_chi_index = -1
-        for i, v in enumerate(chi):
-            if v == min_chi:
-                min_chi_index = i  # Find the index of the interval to be merged
-                break
+        min_chi_index = [i for i,v in enumerate(chi) if v == min_chi]
         new_intervals = []  # Prepare for the merged new data array
         skip = False
         done = False
         for j in range(len(intervals)):
             if skip:
                 skip = False
+                done = False
                 continue
-            if j == min_chi_index and not done:  # Merge the intervals
+            elif j in min_chi_index and not done:  # Merge the intervals
                 t = intervals[j] + intervals[j + 1]
                 new_intervals.append([min(t), max(t)])
                 skip = True
@@ -135,6 +131,9 @@ def chimerge(data, attr, label):
             else:
                 new_intervals.append(intervals[j])
         intervals = new_intervals
+        # Let's keep at least two intervals
+        if len(intervals) < 3:
+            more_merges = False
     return intervals
 
 
@@ -204,15 +203,16 @@ def rule_evaluator(df, rule_columns, new_rule, ruleset, out_var, fidelity=0.5):
     return agreement > fidelity
 
 
-def rule_maker(df, intervals, target_var):
+def rule_maker(df, intervals, col, target_var):
     """
     Creates the IF-THEN rules
-    :param df:
+    :param df: input dataframe
+    :param intervals: list of intervals to build the rules
+    :param col: list of attributes to be analysed
+    :param target_var: name of dependent variable
     :return: rules
     """
     # Getting list of columns of input dataframe and randomly shuffling them
-    col = df.columns.values.tolist()
-    col.remove(target_var)
     random.shuffle(col)
     ret = []
     for item in col:
@@ -348,19 +348,18 @@ for attr in attr_list:
         interv_dict[attr] = interv
     else:
         unique_values = np.unique(xSynth[attr]).tolist()
-        interv_dict[attr] = zip(unique_values, unique_values)
+        interv_dict[attr] = [list(a) for a in zip(unique_values, unique_values)]
 
 print(interv_dict)
 final_rules = []
 if len(discrete_attributes) > 0:
-    discreteSynth = xSynth[discrete_attributes]
-    discreteSynth[label_col] = ySynth[0]
-    out_rule, discreteSynth = rule_maker(discreteSynth, interv_dict, label_col)
+    out_rule, discreteSynth = rule_maker(xSynth, interv_dict, discrete_attributes, label_col)
     final_rules += out_rule
+    if len(final_rules) == 0 or len(discreteSynth) > 0:
+        out_rule, discreteSynth = rule_maker(xSynth, interv_dict, continuous_attributes, label_col)
+        final_rules += out_rule
 else:
-    contSynth = xSynth[continuous_attributes]
-    contSynth[label_col] = ySynth[0]
-    out_rule, contSynth = rule_maker(contSynth, interv_dict, label_col)
+    out_rule, contSynth = rule_maker(xSynth, interv_dict, continuous_attributes, label_col)
     final_rules += out_rule
 
 print(final_rules)

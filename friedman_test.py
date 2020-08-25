@@ -2,7 +2,7 @@ from scipy.stats import friedmanchisquare
 import pandas as pd
 
 data = pd.read_csv('metrics.csv')
-method_groups = data.groupby('Method')
+
 method_list = []
 for index, item in method_groups:
     item = item.drop(['Method', 'Dataset'], axis=1)
