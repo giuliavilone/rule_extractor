@@ -20,11 +20,19 @@ data = pd.DataFrame(data)
 data = data.dropna().reset_index(drop=True)
 
 le = LabelEncoder()
+
+# Encoding the nominal fields
+discrete_attributes = []
+continuous_attributes = []
 for item in range(len(meta.names())):
     item_name = meta.names()[item]
     item_type = meta.types()[item]
     if item_type == 'nominal':
         data[item_name] = le.fit_transform(data[item_name].tolist())
+        if item_name != label_col:
+            discrete_attributes.append(item_name)
+    else:
+        continuous_attributes.append(item_name)
 
 n_members = 5
 n_classes = 2
@@ -168,7 +176,6 @@ def rule_evaluator(df, rule_columns, new_rule, ruleset, out_var, fidelity=0.9):
     :return: boolean (true, false)
     """
     n_samples = len(df)
-    extra_samples = 0
     all_columns = df.columns.values.tolist()
     # Creating synthetics data within the limits set by the rule under evaluation
     eval_df = df[rule_columns]
@@ -212,23 +219,24 @@ def rule_maker(df, intervals, col, target_var):
     :param target_var: name of dependent variable
     :return: rules
     """
-    # Getting list of columns of input dataframe and randomly shuffling them
+    outdf = copy.deepcopy(df)
+    # Randomly shuffling the attributes to be analysed
     random.shuffle(col)
     ret = []
     for item in col:
-        attr_list = df[[item, target_var]].groupby(item).agg(unique_class=(target_var, 'nunique'),
+        attr_list = outdf[[item, target_var]].groupby(item).agg(unique_class=(target_var, 'nunique'),
                                                           max_class=(target_var, 'max')
                                                           ).reset_index(drop=False)
         new_rules = attr_list[attr_list['unique_class'] == 1]
         if len(new_rules) == 0:
             item1 = select_random_item(col, [item])
-            attr_list = df[[item, item1, target_var]].groupby([item, item1]).agg(unique_class=(target_var, 'nunique'),
+            attr_list = outdf[[item, item1, target_var]].groupby([item, item1]).agg(unique_class=(target_var, 'nunique'),
                                                                               max_class=(target_var, 'max')
                                                                               ).reset_index(drop=False)
             new_rules = attr_list[attr_list['unique_class'] == 1]
             if len(new_rules) == 0:
                 item2 = select_random_item(col, [item, item1])
-                attr_list = df[[item, item1, item2, target_var]].groupby([item, item1, item2]).agg(
+                attr_list = outdf[[item, item1, item2, target_var]].groupby([item, item1, item2]).agg(
                     unique_class=(target_var, 'nunique'),
                     max_class=(target_var, 'max')
                 ).reset_index(drop=False)
@@ -240,23 +248,23 @@ def rule_maker(df, intervals, col, target_var):
         new_col.remove('max_class')
         for index, row in new_rules.iterrows():
             # Evaluate the fidelity of the new rule
-            evaluation = rule_evaluator(df, new_col, row, ret, target_var, fidelity=0.5)
+            evaluation = rule_evaluator(outdf, new_col, row, ret, target_var, fidelity=0.9)
             if evaluation:
-                new_dict = {'neuron':new_col}
+                new_dict = {'neuron': new_col}
                 new_dict[target_var] = row['max_class'].tolist()
                 rule_intervals = []
                 for c in new_col:
                     interv = intervals[c]
                     rule_int = [item for item in interv if item[0] == row[c]]
-                    x = df[c]
+                    x = outdf[c]
                     ix = np.where((x < rule_int[0][0]) | (x > rule_int[0][1]))[0]
-                    df = df.iloc[ix]
-                    rule_intervals.append(rule_int)
+                    outdf = outdf.iloc[ix]
+                    rule_intervals += rule_int
                 new_dict['limits'] = rule_intervals
                 ret.append(new_dict)
             if len(df) == 0:
                 break
-    return ret, df
+    return ret, outdf
 
 
 def rule_applier(indf, iny, rules, target_var):
@@ -277,20 +285,6 @@ def rule_applier(indf, iny, rules, target_var):
     return iny
 
 # Main code
-le = LabelEncoder()
-discrete_attributes = []
-continuous_attributes = []
-
-# Encoding the nominal fields
-for item in range(len(meta.names())):
-    item_name = meta.names()[item]
-    item_type = meta.types()[item]
-    if item_type == 'nominal':
-        data[item_name] = le.fit_transform(data[item_name].tolist())
-        if item_name != label_col:
-            discrete_attributes.append(item_name)
-    else:
-        continuous_attributes.append(item_name)
 
 # Separating independent variables from the target one
 X = data.drop(columns=[label_col])
@@ -300,14 +294,14 @@ y = data[label_col]
 classes = y.unique()
 
 # Create the object to perform cross validation
-skf = StratifiedKFold(n_splits=n_members, random_state=7, shuffle=True)
+skf = StratifiedKFold(n_splits=n_members, random_state=10, shuffle=True)
 
 # define model
 model = create_model(X, n_classes, hidden_neurons)
 
 # Training the model on the 5 cross validation datasets
 fold_var = 1
-model_train = True
+model_train = False
 if model_train:
     for train_index, val_index in skf.split(X, y):
         X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
@@ -332,7 +326,7 @@ print(accuracy_score(ensemble_res[0], y))
 
 # According to the paper, it is enough to generate a new dataset which is twice the training set to obtain
 # very accurate rules
-synth_samples = X.shape[0] * 2
+synth_samples = X_train.shape[0] * 2
 xSynth = synthetic_data_generator(X, synth_samples)
 ySynth = ensemble_predictions(members, xSynth)
 
@@ -355,12 +349,18 @@ final_rules = []
 if len(discrete_attributes) > 0:
     out_rule, discreteSynth = rule_maker(xSynth, interv_dict, discrete_attributes, label_col)
     final_rules += out_rule
+    print("Rules with discrete attributes only")
+    print(final_rules)
     if len(final_rules) == 0 or len(discreteSynth) > 0:
-        out_rule, discreteSynth = rule_maker(xSynth, interv_dict, continuous_attributes, label_col)
+        out_rule, discreteSynth = rule_maker(discreteSynth, interv_dict, continuous_attributes, label_col)
         final_rules += out_rule
+        print("Rules with discrete and continuous attributes")
+        print(final_rules)
 else:
     out_rule, contSynth = rule_maker(xSynth, interv_dict, continuous_attributes, label_col)
     final_rules += out_rule
+    print("Rules with continuous attributes only")
+    print(final_rules)
 
 print(final_rules)
 
