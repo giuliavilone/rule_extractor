@@ -13,8 +13,8 @@ from common_functions import perturbator, create_model, model_trainer
 TOLERANCE = 0.01
 MODEL_NAME = 'rxren_model.h5'
 
-data, meta = arff.loadarff('datasets-UCI/UCI/hepatitis.arff')
-label_col = 'Class'
+data, meta = arff.loadarff('datasets-UCI/UCI/diabetes.arff')
+label_col = 'class'
 data = pd.DataFrame(data)
 data = data.dropna()
 le = LabelEncoder()
@@ -144,7 +144,7 @@ y = le.fit_transform(data[label_col].tolist())
 
 
 ix = [i for i in range(len(X))]
-train_index = resample(ix, replace=True, n_samples=int(len(X)*0.7), random_state=0)
+train_index = resample(ix, replace=True, n_samples=int(len(X)*0.5), random_state=0)
 val_index = [x for x in ix if x not in train_index]
 X_train, X_test = X[train_index], X[val_index]
 y_train, y_test = y[train_index], y[val_index]
@@ -152,22 +152,20 @@ y_train, y_test = y[train_index], y[val_index]
 # define model
 model = create_model(X, n_classes, hidden_neurons)
 
-model_train = True
+model_train = False
 if model_train:
     model_trainer(X_train, to_categorical(y_train, num_classes=n_classes),
                   X_test, to_categorical(y_test, num_classes=n_classes), model, MODEL_NAME)
 
 model = load_model(MODEL_NAME)
 weights = np.array(model.get_weights())
-results = model.predict(X)
+results = model.predict(X_train)
 results = np.argmax(results, axis=1)
-correctX = X[[results[i] == y[i] for i in range(len(y))]]
-correcty = y[[results[i] == y[i] for i in range(len(y))]]
+correctX = X_train[[results[i] == y_train[i] for i in range(len(y_train))]]
+correcty = y_train[[results[i] == y_train[i] for i in range(len(y_train))]]
 
-new_res = model.predict(X_train)
-new_res = np.argmax(new_res, axis=1)
-acc = accuracy_score(new_res, y_train)
-print(acc)
+acc = accuracy_score(results, y_train)
+print("Accuracy of original model on the training dataset: ", acc)
 
 miss_list, ins_index, new_accuracy, err = network_pruning(weights, correctX, correcty, X_train, y_train, acc)
 significant_index = [i for i in range(weights[0].shape[0]) if i not in ins_index]
@@ -216,10 +214,13 @@ for i in range(0, num_test_examples):
     complete += (rule_labels[i] == n_classes + 10)
 
 fidelity = fidel / num_test_examples
-print("Fidelity of the ruleset is : " + str(fidelity))
+print("Fidelity of the ruleset is: " + str(fidelity))
 completeness = 1 - complete / num_test_examples
-print("Completeness of the ruleset is : " + str(completeness))
+print("Completeness of the ruleset is: " + str(completeness))
 correctness = correct / num_test_examples
-print("Correctness of the ruleset is : " + str(correctness))
+print("Correctness of the ruleset is: " + str(correctness))
 robustness = rob / num_test_examples
-print("Robustness of the ruleset is : " + str(robustness))
+print("Robustness of the ruleset is: " + str(robustness))
+print("Number of rules : " + str(len(new_limits)))
+avg_length = sum([len(item['neuron']) for item in new_limits]) / len(new_limits)
+print("Average rule length: " + str(avg_length))

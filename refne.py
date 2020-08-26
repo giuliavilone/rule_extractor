@@ -14,8 +14,8 @@ import random
 import copy
 
 # Global variables
-data, meta = arff.loadarff('datasets-UCI/UCI/hepatitis.arff')
-label_col = 'Class'
+data, meta = arff.loadarff('datasets-UCI/UCI/credit-g.arff')
+label_col = 'class'
 data = pd.DataFrame(data)
 data = data.dropna().reset_index(drop=True)
 
@@ -28,7 +28,7 @@ for item in range(len(meta.names())):
 
 n_members = 5
 n_classes = 2
-hidden_neurons = 3
+hidden_neurons = 4
 
 # Functions
 def load_all_models(n_models):
@@ -69,8 +69,8 @@ def synthetic_data_generator(indf, n_samples):
     """
     outdf = pd.DataFrame()
     for column in indf.columns.tolist():
-        minvalue = indf.min()[column]
-        maxvalue = indf.max()[column]
+        minvalue = indf[column].min()
+        maxvalue = indf[column].max()
         outdf[column] = np.round(np.random.uniform(minvalue, maxvalue, n_samples), 1)
     return outdf
 
@@ -94,8 +94,8 @@ def chimerge(data, attr, label):
         for i in range(len(intervals) - 1):
             lab0 = sorted(set(data[label][data[attr].between(intervals[i][0], intervals[i][1])]))
             lab1 = sorted(set(data[label][data[attr].between(intervals[i + 1][0], intervals[i + 1][1])]))
-            # if len(lab0) + len(lab1) > 2 or lab0 != lab1:
-            if lab0 != lab1:
+            if len(lab0) + len(lab1) > 2 or lab0 != lab1:
+            #if lab0 != lab1:
                 chi.append(1000000.0)
                 continue
             else:
@@ -161,7 +161,7 @@ def select_random_item(int_list, ex_item_list):
     return new_item
 
 
-def rule_evaluator(df, rule_columns, new_rule, ruleset, out_var, fidelity=0.5):
+def rule_evaluator(df, rule_columns, new_rule, ruleset, out_var, fidelity=0.9):
     """
     Evaluate the fidelity of the new rule
     :param rule:
@@ -401,3 +401,6 @@ correctness = correct / num_test_examples
 print("Correctness of the ruleset is : " + str(correctness))
 robustness = rob / num_test_examples
 print("Robustness of the ruleset is : " + str(robustness))
+print("Number of rules : " + str(len(final_rules)))
+avg_length = sum([len(item['neuron']) for item in final_rules]) / len(final_rules)
+print("Average rule length: " + str(avg_length))

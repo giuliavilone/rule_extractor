@@ -8,8 +8,8 @@ from common_functions import create_model, model_trainer, perturbator
 from trepan import Tree, Oracle
 import sys
 
-data, meta = arff.loadarff('datasets-UCI/UCI/iris.arff')
-label_col = 'class'
+data, meta = arff.loadarff('datasets-UCI/UCI/vote.arff')
+label_col = 'Class'
 data = pd.DataFrame(data)
 data = data.dropna().reset_index(drop=True)
 
@@ -20,9 +20,9 @@ for item in range(len(meta.names())):
     if item_type == 'nominal':
         data[item_name] = le.fit_transform(data[item_name].tolist())
 
-n_cross_val = 10
-n_class = 3
-n_nodes = 3
+n_cross_val = 2
+n_class = 2
+n_nodes = 4
 
 ###########################################
 

@@ -7,12 +7,12 @@ from keras.models import load_model
 import numpy as np
 from scipy.stats import mode
 from sklearn.metrics import accuracy_score
-from sklearn.tree import DecisionTreeClassifier, export_text
+from sklearn.tree import DecisionTreeClassifier, export_text, export_graphviz
 from common_functions import perturbator, create_model, model_trainer
 
 # Global variables
 n_members = 10
-data, meta = arff.loadarff('datasets-UCI/UCI/hepatitis.arff')
+data, meta = arff.loadarff('datasets-UCI/UCI/diabetes.arff')
 data = pd.DataFrame(data)
 data = data.dropna()
 
@@ -23,9 +23,9 @@ for item in range(len(meta.names())):
     if item_type == 'nominal':
         data[item_name] = le.fit_transform(data[item_name].tolist())
 
-target_var = 'Class'
+target_var = 'class'
 n_classes = 2
-hidden_neurons = 4
+hidden_neurons = 3
 
 # Functions
 def load_all_models(n_models):
@@ -105,6 +105,26 @@ def print_decision_tree(tree, feature_names=None, offset_unit='    '):
     recurse(left, right, threshold, features, 0, 0)
 
 
+def get_node_depths(tree):
+    """
+    Get the node depths of the decision tree
+
+    d = DecisionTreeClassifier()
+    d.fit([[1,2,3],[4,5,6],[7,8,9]], [1,2,3])
+    get_node_depths(d.tree_)
+    array([0, 1, 1, 2, 2])
+    """
+    def get_node_depths_(current_node, current_depth, l, r, depths):
+        if l[current_node] != -1 and r[current_node] != -1:
+            get_node_depths_(l[current_node], current_depth + 1, l, r, depths)
+            get_node_depths_(r[current_node], current_depth + 1, l, r, depths)
+        else:
+            depths += [current_depth]
+
+    depths = []
+    get_node_depths_(0, 0, tree.children_left, tree.children_right, depths)
+    return np.array(depths)
+
 # Main code
 
 # Separating independent variables from the target one
@@ -147,11 +167,14 @@ yTot = np.transpose(np.concatenate([ensemble_res, ySynth], axis=1))
 # This uses the CART algorithm (see https://scikit-learn.org/stable/modules/tree.html)
 clf = DecisionTreeClassifier()
 clf = clf.fit(xTot, yTot)
+
 rules = export_text(clf)
+string_data = export_graphviz(clf, out_file=None)
 
 # Showing the rules
 print_decision_tree(clf)
 print(rules)
+print(string_data)
 
 predicted_labels = clf.predict(X_test)
 model_test_labels = ensemble_predictions(members, X_test)[0]
@@ -177,3 +200,8 @@ correctness = correct / num_test_examples
 print("Correctness of the ruleset is : " + str(correctness))
 robustness = rob / num_test_examples
 print("Robustness of the ruleset is : " + str(robustness))
+print("Number of rules: ", clf.get_n_leaves())
+depths = get_node_depths(clf.tree_)
+print("Depths: ", depths)
+print("Length of depths: ", len(depths))
+print("Average of depths: ", np.mean(depths))
