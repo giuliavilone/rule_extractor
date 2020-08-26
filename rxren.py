@@ -8,6 +8,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score
 import copy
 from common_functions import perturbator, create_model, model_trainer
+import sys
 
 # Global variable
 TOLERANCE = 0.01
@@ -54,7 +55,7 @@ def model_pruned_prediction(inputX, w):
     return results
 
 
-def network_pruning(w, cX, cy, train_x, train_y, accuracy):
+def network_pruning(w, cX, cy, test_x, test_y, accuracy):
     """
     This function removes the insignificant input neurons
     :param w: model's weights
@@ -77,10 +78,10 @@ def network_pruning(w, cX, cy, train_x, train_y, accuracy):
     pruning = True
     theta = min(error_list)
     while pruning:
-        insignificant_neurons = insignificant_neurons + [i for i, e in enumerate(error_list) if e == theta]
-        new_train_x, new_w = input_delete(insignificant_neurons, train_x, inWeight=w)
-        new_res = model_pruned_prediction(new_train_x, new_w)
-        new_acc = accuracy_score(new_res, train_y)
+        insignificant_neurons = [i for i, e in enumerate(error_list) if e <= theta]
+        new_test_x, new_w = input_delete(insignificant_neurons, test_x, inWeight=w)
+        new_res = model_pruned_prediction(new_test_x, new_w)
+        new_acc = accuracy_score(new_res, test_y)
         if new_acc >= accuracy - TOLERANCE:
             new_error_list = [e for i, e in enumerate(error_list) if e > theta]
             # Leaving at least one significant neuron
@@ -106,8 +107,8 @@ def rule_limits_calculator(c_x, c_y, missclassified_list, significant_neurons, e
                                 if len(miss_class[:, i][miss_class[:, -1] == k]) > (error * alpha)]
     return grouped_miss_class
 
-def rule_evaluator(train_x, train_y, rule_list, class_list):
-    predicted_y = np.empty(train_y.shape)
+def rule_evaluator(x, y, rule_list, class_list):
+    predicted_y = np.empty(y.shape)
     predicted_y[:] = np.NaN
     class_list = class_list.tolist()
     for rule in rule_list:
@@ -116,7 +117,7 @@ def rule_evaluator(train_x, train_y, rule_list, class_list):
         col = rule['neuron']
         minimum = rule['limits'][0]
         maximum = rule['limits'][1]
-        predicted_y[(train_x[:, col] >= minimum) * (train_x[:, col] <= maximum)] = int(rule['class'])
+        predicted_y[(x[:, col] >= minimum) * (x[:, col] <= maximum)] = int(rule['class'])
     if len(class_list) == 1:
         predicted_y[np.isnan(predicted_y)] = class_list[0]
     elif len(class_list) == 0:
@@ -124,13 +125,13 @@ def rule_evaluator(train_x, train_y, rule_list, class_list):
         predicted_y[np.isnan(predicted_y)] = n_classes + 10
     else:
         print("It is not possible to identify default class")
-    rule_accuracy = accuracy_score(predicted_y, train_y)
+    rule_accuracy = accuracy_score(predicted_y, y)
     # Calculate min and max of mismatched instances
-    mismatched = [index for index, elem in enumerate(train_y) if elem != predicted_y[index]]
+    mismatched = [index for index, elem in enumerate(y) if elem != predicted_y[index]]
     ret_rules = []
     for rule in rule_list:
         col = rule['neuron']
-        mismatched_values = train_x[mismatched, col]
+        mismatched_values = x[mismatched, col]
         rule['new_limits'] = [min(mismatched_values), max(mismatched_values)]
         ret_rules.append(rule)
     return rule_accuracy, ret_rules
@@ -152,7 +153,7 @@ y_train, y_test = y[train_index], y[val_index]
 # define model
 model = create_model(X, n_classes, hidden_neurons)
 
-model_train = False
+model_train = True
 if model_train:
     model_trainer(X_train, to_categorical(y_train, num_classes=n_classes),
                   X_test, to_categorical(y_test, num_classes=n_classes), model, MODEL_NAME)
@@ -165,25 +166,30 @@ correctX = X_train[[results[i] == y_train[i] for i in range(len(y_train))]]
 correcty = y_train[[results[i] == y_train[i] for i in range(len(y_train))]]
 
 acc = accuracy_score(results, y_train)
-print("Accuracy of original model on the training dataset: ", acc)
+print("Accuracy of original model on the train dataset: ", acc)
+test_pred = np.argmax(model.predict(X_test), axis=1)
+test_acc = accuracy_score(test_pred, y_test)
+print("Accuracy of original model on the test dataset: ", test_acc)
 
-miss_list, ins_index, new_accuracy, err = network_pruning(weights, correctX, correcty, X_train, y_train, acc)
+miss_list, ins_index, new_accuracy, err = network_pruning(weights, correctX, correcty, X_test, y_test, test_acc)
 significant_index = [i for i in range(weights[0].shape[0]) if i not in ins_index]
-print(new_accuracy)
+print("Accuracy of pruned network", new_accuracy)
+
+
 rule_limits = rule_limits_calculator(correctX, correcty, miss_list, significant_index, err, alpha=0.5)
 
 rule_simplifier = True
 old_rule_acc = new_accuracy
-new_limits = []
+final_rules = []
 while rule_simplifier:
-    rule_acc, new_limits = rule_evaluator(X_train, y_train, rule_limits, np.unique(y))
+    rule_acc, final_rules = rule_evaluator(X_test, y_test, rule_limits, np.unique(y))
     if rule_acc > old_rule_acc:
         old_rule_acc = rule_acc
     else:
         rule_simplifier = False
-    new_limits[0]['limits'] = new_limits[0].pop('new_limits')
+    final_rules[0]['limits'] = final_rules[0].pop('new_limits')
 
-print(new_limits)
+print(final_rules)
 predicted_labels = np.argmax(model.predict(X_test), axis=1)
 
 num_test_examples = X_test.shape[0]
@@ -192,7 +198,7 @@ rule_labels = np.empty(num_test_examples)
 rule_labels[:] = np.nan
 perturbed_labels = np.empty(num_test_examples)
 perturbed_labels[:] = np.nan
-for rule in new_limits:
+for rule in final_rules:
     neuron = X_test[:, rule['neuron']]
     indexes = np.where((neuron >= rule['limits'][0]) & (neuron <= rule['limits'][1]))
     rule_labels[indexes] = rule['class']
@@ -221,6 +227,6 @@ correctness = correct / num_test_examples
 print("Correctness of the ruleset is: " + str(correctness))
 robustness = rob / num_test_examples
 print("Robustness of the ruleset is: " + str(robustness))
-print("Number of rules : " + str(len(new_limits)))
-avg_length = sum([len(item['neuron']) for item in new_limits]) / len(new_limits)
+print("Number of rules : " + str(len(final_rules)))
+avg_length = sum([len(item['neuron']) for item in final_rules]) / len(final_rules)
 print("Average rule length: " + str(avg_length))

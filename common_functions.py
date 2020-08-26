@@ -12,7 +12,7 @@ def create_model(train_x, num_classes, hidden_nodes):
     return model
 
 
-def model_trainer(train_x, train_y, test_x, test_y, model, model_name, n_epochs=200):
+def model_trainer(train_x, train_y, test_x, test_y, model, model_name, n_epochs=100):
     check_pointer = ModelCheckpoint(filepath=model_name,
                                    save_weights_only=False,
                                    monitor='loss',
