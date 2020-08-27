@@ -107,6 +107,54 @@ def rule_limits_calculator(c_x, c_y, missclassified_list, significant_neurons, e
                                 if len(miss_class[:, i][miss_class[:, -1] == k]) > (error * alpha)]
     return grouped_miss_class
 
+def rule_combiner(ruleset):
+    rule_dict = {'class': [], 'neuron': [], 'limits': [], 'position': []}
+    for i, rule in enumerate(ruleset):
+        if rule['class'] not in rule_dict['class']:
+            rule_dict['class'] += [rule['class']]
+            rule_dict['neuron'].append([rule['neuron']])
+            rule_dict['limits'].append([rule['limits']])
+            rule_dict['position'].append([i])
+        else:
+            ix = rule_dict['class'].index(rule['class'])
+            rule_dict['neuron'][ix].append(rule['neuron'])
+            rule_dict['limits'][ix].append(rule['limits'])
+            rule_dict['position'][ix].append(i)
+    return rule_dict
+
+def rule_pruning(train_x, train_y, ruleset):
+    """
+    Pruning the rules
+    :param train_x:
+    :param train_y:
+    :param ruleset:
+    :return:
+    """
+    rule_dict = rule_combiner(ruleset)
+    for i, v in enumerate(rule_dict['class']):
+        predicted_y = np.empty(train_y.shape)
+        predicted_y[:] = np.NaN
+        limits = rule_dict['limits'][i]
+        neuron = rule_dict['neuron'][i]
+        position = np.array(rule_dict['position'][i])
+        single_accuracies = []
+        for k, z in enumerate(neuron):
+            predicted_y_single = np.empty(train_y.shape)
+            predicted_y_single[:] = np.NaN
+            minimum = limits[k][0]
+            maximum = limits[k][1]
+            predicted_y[(train_x[:, z] >= minimum) * (train_x[:, z] <= maximum)] = int(v)
+            predicted_y_single[(train_x[:, z] >= minimum) * (train_x[:, z] <= maximum)] = int(v)
+            # It is necessary to remove the nan values otherwise it is not possible to calculate accuracy
+            predicted_y_single[np.isnan(predicted_y_single)] = n_classes + 10
+            single_accuracies += [accuracy_score(predicted_y_single, train_y)]
+        predicted_y[np.isnan(predicted_y)] = n_classes + 10
+        overall_accuracy = accuracy_score(predicted_y, train_y)
+        ixs = position[np.array(single_accuracies >= overall_accuracy, dtype=bool)]
+        for item in ixs:
+            ruleset.pop(item)
+    return ruleset
+
 def rule_evaluator(x, y, rule_list, class_list):
     predicted_y = np.empty(y.shape)
     predicted_y[:] = np.NaN
@@ -153,7 +201,7 @@ y_train, y_test = y[train_index], y[val_index]
 # define model
 model = create_model(X, n_classes, hidden_neurons)
 
-model_train = True
+model_train = False
 if model_train:
     model_trainer(X_train, to_categorical(y_train, num_classes=n_classes),
                   X_test, to_categorical(y_test, num_classes=n_classes), model, MODEL_NAME)
@@ -177,6 +225,8 @@ print("Accuracy of pruned network", new_accuracy)
 
 
 rule_limits = rule_limits_calculator(correctX, correcty, miss_list, significant_index, err, alpha=0.5)
+if len(rule_limits) > 1:
+    rule_limits = rule_pruning(X_train, y_train, rule_limits)
 
 rule_simplifier = True
 old_rule_acc = new_accuracy
@@ -228,5 +278,6 @@ print("Correctness of the ruleset is: " + str(correctness))
 robustness = rob / num_test_examples
 print("Robustness of the ruleset is: " + str(robustness))
 print("Number of rules : " + str(len(final_rules)))
-avg_length = sum([len(item['neuron']) for item in final_rules]) / len(final_rules)
+combined_rules = rule_combiner(final_rules)
+avg_length = sum([len(item) for item in combined_rules['neuron']]) / len(combined_rules['class'])
 print("Average rule length: " + str(avg_length))
