@@ -12,15 +12,15 @@ from common_functions import perturbator, create_model, model_trainer
 from collections import Counter
 import random
 import copy
+import sys
 
 # Global variables
-data, meta = arff.loadarff('datasets-UCI/UCI/credit-g.arff')
+data, meta = arff.loadarff('datasets-UCI/UCI/iris.arff')
 label_col = 'class'
 data = pd.DataFrame(data)
 data = data.dropna().reset_index(drop=True)
 
 le = LabelEncoder()
-
 # Encoding the nominal fields
 discrete_attributes = []
 continuous_attributes = []
@@ -35,8 +35,8 @@ for item in range(len(meta.names())):
         continuous_attributes.append(item_name)
 
 n_members = 5
-n_classes = 2
-hidden_neurons = 4
+n_classes = 3
+hidden_neurons = 3
 
 # Functions
 def load_all_models(n_models):
@@ -67,19 +67,23 @@ def ensemble_predictions(members, testX):
     return results
 
 
-def synthetic_data_generator(indf, n_samples):
+def synthetic_data_generator(indf, n_samples, discrete=discrete_attributes):
     """
     Given an input dataframe, the function returns a new dataframe containing random numbers
     generated within the value ranges of the input attributes.
     :param indf:
     :param n_samples: integer number of samples to be generated
+    :param discrete
     :return: outdf: of synthetic data
     """
     outdf = pd.DataFrame()
     for column in indf.columns.tolist():
-        minvalue = indf[column].min()
-        maxvalue = indf[column].max()
-        outdf[column] = np.round(np.random.uniform(minvalue, maxvalue, n_samples), 1)
+        if column in discrete:
+            outdf[column] = np.random.choice(np.unique(indf[column]).tolist(), n_samples)
+        else:
+            minvalue = indf[column].min()
+            maxvalue = indf[column].max()
+            outdf[column] = np.round(np.random.uniform(minvalue, maxvalue, n_samples), 1)
     return outdf
 
 
@@ -198,14 +202,14 @@ def rule_evaluator(df, rule_columns, new_rule, ruleset, out_var, fidelity=0.9):
         for eval_rule in ruleset:
             for s in range(len(eval_rule['neuron'])):
                 x = tot_df[eval_rule['neuron'][s]]
-                ix = np.where((x < eval_rule['limits'][s][0][0]) | (x > eval_rule['limits'][s][0][1]))[0]
+                ix = np.where((x < eval_rule['limits'][s][0]) | (x > eval_rule['limits'][s][1]))[0]
                 tot_df = tot_df.iloc[ix]
         extra_samples = n_samples - len(tot_df)
         if extra_samples > 0:
             extra_df = synthetic_data_generator(tot_df, extra_samples)
             tot_df = pd.concat([tot_df, extra_df], axis=0)
     # Evaluating the fidelity of the rule under evaluation
-    tot_df[out_var] = np.argmax(model.predict(tot_df), axis=1)
+    tot_df[out_var] = ensemble_predictions(members, tot_df)[0]
     agreement = len(tot_df[tot_df[out_var] == new_rule['max_class']]) / len(tot_df)
     return agreement > fidelity
 
@@ -218,6 +222,7 @@ def rule_maker(df, intervals, col, target_var):
     :param col: list of attributes to be analysed
     :param target_var: name of dependent variable
     :return: rules
+    :return: outdf
     """
     outdf = copy.deepcopy(df)
     # Randomly shuffling the attributes to be analysed
@@ -248,10 +253,10 @@ def rule_maker(df, intervals, col, target_var):
         new_col.remove('max_class')
         for index, row in new_rules.iterrows():
             # Evaluate the fidelity of the new rule
-            evaluation = rule_evaluator(outdf, new_col, row, ret, target_var, fidelity=0.9)
+            evaluation = rule_evaluator(outdf, new_col, row, ret, target_var, fidelity=0.8)
             if evaluation:
                 new_dict = {'neuron': new_col}
-                new_dict[target_var] = row['max_class'].tolist()
+                new_dict['class'] = row['max_class'].tolist()
                 rule_intervals = []
                 for c in new_col:
                     interv = intervals[c]
@@ -267,7 +272,7 @@ def rule_maker(df, intervals, col, target_var):
     return ret, outdf
 
 
-def rule_applier(indf, iny, rules, target_var):
+def rule_applier(indf, iny, rules):
     """
     Apply the input rules to the list of labels iny according to the rule conditions on indf
     :param indf:
@@ -278,14 +283,14 @@ def rule_applier(indf, iny, rules, target_var):
     indexes = []
     for r in range(len(rules['neuron'])):
         x = indf[rules['neuron'][r]]
-        ix = np.where((x >= rules['limits'][r][0][0]) & (x <= rules['limits'][r][0][1]))[0]
+        ix = np.where((x >= rules['limits'][r][0]) & (x <= rules['limits'][r][1]))[0]
         indexes = [x for x in ix if x not in indexes]
 
-    iny[indexes] = rule[target_var]
+    iny[indexes] = rule['class']
     return iny
 
-# Main code
 
+# Main code
 # Separating independent variables from the target one
 X = data.drop(columns=[label_col])
 y = data[label_col]
@@ -294,7 +299,7 @@ y = data[label_col]
 classes = y.unique()
 
 # Create the object to perform cross validation
-skf = StratifiedKFold(n_splits=n_members, random_state=10, shuffle=True)
+skf = StratifiedKFold(n_splits=n_members, shuffle=True)
 
 # define model
 model = create_model(X, n_classes, hidden_neurons)
@@ -312,7 +317,7 @@ if model_train:
         fold_var += 1
 else:
     ix = [i for i in range(len(X))]
-    train_index = resample(ix, replace=True, n_samples=int(len(X) * 0.7), random_state=0)
+    train_index = resample(ix, replace=True, n_samples=int(len(X) * 0.5), random_state=0)
     val_index = [x for x in ix if x not in train_index]
     X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
     y_train, y_test = y[train_index], y[val_index]
@@ -326,7 +331,7 @@ print(accuracy_score(ensemble_res[0], y))
 
 # According to the paper, it is enough to generate a new dataset which is twice the training set to obtain
 # very accurate rules
-synth_samples = X_train.shape[0] * 2
+synth_samples = X.shape[0] * 2
 xSynth = synthetic_data_generator(X, synth_samples)
 ySynth = ensemble_predictions(members, xSynth)
 
@@ -335,7 +340,6 @@ attr_list = xSynth.columns.tolist()
 xSynth[label_col] = ySynth[0]
 interv_dict = {}
 for attr in attr_list:
-    print(attr)
     if attr in continuous_attributes:
         interv = chimerge(data=xSynth, attr=attr, label=label_col)
         xSynth[attr] = discretizer(xSynth[attr], interv)
@@ -376,9 +380,9 @@ perturbed_labels[:] = np.nan
 
 for rule in final_rules:
     neuron = X_test[rule['neuron']]
-    rule_labels = rule_applier(neuron, rule_labels, rule, label_col)
+    rule_labels = rule_applier(neuron, rule_labels, rule)
     p_neuron = perturbed_data[rule['neuron']]
-    perturbed_labels = rule_applier(p_neuron, rule_labels, rule, label_col)
+    perturbed_labels = rule_applier(p_neuron, rule_labels, rule)
 
 completeness = sum(~np.isnan(rule_labels)) / num_test_examples
 print("Completeness of the ruleset is : " + str(completeness))

@@ -146,7 +146,7 @@ class Tree:
         self.initial_data = oracle.X
         self.initial_labels = oracle.y
         self.num_examples = len(oracle.X)
-        self.tree_params = {"tree_size": 25, "split_min": 200, "l1e_threshold": 0.01, "num_feature_splits": 10}
+        self.tree_params = {"tree_size": 50, "split_min": 100, "num_feature_splits": 10}
         self.num_nodes = 0
         self.max_levels = 0
 
@@ -159,10 +159,7 @@ class Tree:
         return float(priority)
 
     def get_fidelity(self, node):
-        # num_corr_predictions = 0
         l2e = 1 - (float(node.misclassified)/self.num_examples)
-        # l2e = np.exp(-(predictions - self.oracle.get_oracle_labels(node.data).squeeze()) ** 2)
-        #     num_corr_predictions += 1 if l1e <= self.tree_params["l1e_threshold"] else 0
         return l2e
 
     def build_tree(self):
@@ -251,7 +248,6 @@ class Tree:
 
             node.left = self.construct_node(node.data[left_ind], node.labels[left_ind], left_constraints)
             node.right = self.construct_node(node.data[right_ind], node.labels[right_ind], right_constraints)
-
             node.split_rule = left_rule
 
         return node
@@ -315,7 +311,8 @@ class Tree:
     def print_tree(self, root, level):
         if self.is_leaf(root):
             if level == root.level:
-                print(root.dominant, " ")
+                print('node level:', level)
+                print(root.dominant)
         else:
             if level == root.level:
                 print(root.split_rule)
@@ -324,3 +321,12 @@ class Tree:
                 self.print_tree(root.left, level)
             if root.right is not None:
                 self.print_tree(root.right, level)
+
+    def leaf_values(self, root, ret_list=[]):
+        if self.is_leaf(root):
+            ret_list += [root.level]
+        if root.left is not None:
+            self.leaf_values(root.left, ret_list)
+        if root.right is not None:
+            self.leaf_values(root.right, ret_list)
+        return ret_list
