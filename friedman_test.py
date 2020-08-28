@@ -15,4 +15,3 @@ data1, data2, data3, data4 = method_list
 
 stat, p = friedmanchisquare(data1, data2, data3, data4)
 print('Statistics=%.3f, p=%.3f' % (stat, p))
-
