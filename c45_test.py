@@ -12,7 +12,7 @@ from common_functions import perturbator, create_model, model_trainer
 
 # Global variables
 n_members = 10
-data, meta = arff.loadarff('datasets-UCI/UCI/diabetes.arff')
+data, meta = arff.loadarff('datasets-UCI/UCI/hepatitis.arff')
 data = pd.DataFrame(data)
 data = data.dropna()
 
@@ -23,7 +23,7 @@ for item in range(len(meta.names())):
     if item_type == 'nominal':
         data[item_name] = le.fit_transform(data[item_name].tolist())
 
-target_var = 'class'
+target_var = 'Class'
 n_classes = 2
 hidden_neurons = 3
 
@@ -202,6 +202,4 @@ robustness = rob / num_test_examples
 print("Robustness of the ruleset is : " + str(robustness))
 print("Number of rules: ", clf.get_n_leaves())
 depths = get_node_depths(clf.tree_)
-print("Depths: ", depths)
-print("Length of depths: ", len(depths))
-print("Average of depths: ", np.mean(depths))
+print("Average rule length: ", np.mean(depths))

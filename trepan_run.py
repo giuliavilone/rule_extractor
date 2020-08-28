@@ -9,7 +9,7 @@ from trepan import Tree, Oracle
 from sklearn.utils import resample
 import sys
 
-data, meta = arff.loadarff('datasets-UCI/UCI/vote.arff')
+data, meta = arff.loadarff('datasets-UCI/UCI/hepatitis.arff')
 label_col = 'Class'
 data = pd.DataFrame(data)
 data = data.dropna().reset_index(drop=True)
@@ -23,7 +23,7 @@ for item in range(len(meta.names())):
 
 n_cross_val = 2
 n_class = 2
-n_nodes = 4
+n_nodes = 3
 
 ###########################################
 

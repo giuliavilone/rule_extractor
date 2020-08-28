@@ -15,7 +15,7 @@ import copy
 import sys
 
 # Global variables
-data, meta = arff.loadarff('datasets-UCI/UCI/iris.arff')
+data, meta = arff.loadarff('datasets-UCI/UCI/diabetes.arff')
 label_col = 'class'
 data = pd.DataFrame(data)
 data = data.dropna().reset_index(drop=True)
@@ -34,8 +34,8 @@ for item in range(len(meta.names())):
     else:
         continuous_attributes.append(item_name)
 
-n_members = 5
-n_classes = 3
+n_members = 2
+n_classes = 2
 hidden_neurons = 3
 
 # Functions
@@ -306,7 +306,7 @@ model = create_model(X, n_classes, hidden_neurons)
 
 # Training the model on the 5 cross validation datasets
 fold_var = 1
-model_train = False
+model_train = True
 if model_train:
     for train_index, val_index in skf.split(X, y):
         X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]

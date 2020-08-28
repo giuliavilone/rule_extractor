@@ -14,8 +14,8 @@ import sys
 TOLERANCE = 0.01
 MODEL_NAME = 'rxren_model.h5'
 
-data, meta = arff.loadarff('datasets-UCI/UCI/diabetes.arff')
-label_col = 'class'
+data, meta = arff.loadarff('datasets-UCI/UCI/hepatitis.arff')
+label_col = 'Class'
 data = pd.DataFrame(data)
 data = data.dropna()
 le = LabelEncoder()
@@ -201,7 +201,7 @@ y_train, y_test = y[train_index], y[val_index]
 # define model
 model = create_model(X, n_classes, hidden_neurons)
 
-model_train = False
+model_train = True
 if model_train:
     model_trainer(X_train, to_categorical(y_train, num_classes=n_classes),
                   X_test, to_categorical(y_test, num_classes=n_classes), model, MODEL_NAME)
