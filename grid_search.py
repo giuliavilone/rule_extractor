@@ -15,36 +15,48 @@ import sys
 seed = 7
 numpy.random.seed(seed)
 # load dataset
-dataset, meta = arff.loadarff('datasets-UCI/UCI/credit-g.arff')
-label_col = 'class'
-dataset = pd.DataFrame(dataset)
-dataset = dataset.dropna()
-
 le = LabelEncoder()
-for item in range(len(meta.names())):
-    item_name = meta.names()[item]
-    item_type = meta.types()[item]
-    if item_type == 'nominal':
-        dataset[item_name] = le.fit_transform(dataset[item_name].tolist())
+load_arff = True
+if load_arff:
+    dataset, meta = arff.loadarff('datasets-UCI/UCI/waveform-5000.arff')
+    label_col = 'class'
+    dataset = pd.DataFrame(dataset)
+    dataset = dataset.dropna()
 
-# split into input (X) and output (Y) variables
-X = dataset.drop(columns=[label_col]).to_numpy()
-Y = le.fit_transform(dataset[label_col].tolist())
+    for item in range(len(meta.names())):
+        item_name = meta.names()[item]
+        item_type = meta.types()[item]
+        if item_type == 'nominal':
+            dataset[item_name] = le.fit_transform(dataset[item_name].tolist())
+    # split into input (X) and output (Y) variables
+    X = dataset.drop(columns=[label_col]).to_numpy()
+    Y = le.fit_transform(dataset[label_col].tolist())
+else:
+    dataset = pd.read_csv('datasets-UCI/pageblocks/page-blocks.csv')
+    label_col = 'class'
+    # split into input (X) and output (Y) variables
+    # dataset = dataset.drop(columns=['sequence_name'])
+    X = dataset.drop(columns=[label_col]).to_numpy()
+    Y = dataset[label_col].tolist()
 
+print(X.shape)
+print(set(Y))
+print(len(set(Y)))
 
 # -------------- Tuning the optimizer -----------------#
 # Function to create model, required for KerasClassifier
 def create_model(neurons=10, optimizer ='adam'):
     # create model
     model = Sequential()
-    model.add(Dense(neurons, input_dim=20, activation='sigmoid'))
-    model.add(Dense(2, activation="softmax"))
+    model.add(Dense(neurons, input_dim=40, activation='sigmoid'))
+    model.add(Dense(3, activation="softmax"))
     # Compile model
     model.compile(loss='sparse_categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
     return model
 
+
 # create model
-model = KerasClassifier(build_fn=create_model, epochs=20, batch_size=10, verbose=0)
+model = KerasClassifier(build_fn=create_model, epochs=50, batch_size=10, verbose=0)
 # define the grid search parameters
 optimizer = ['Adam', 'Adagrad', 'Adadelta', 'Adamax', 'Nadam', 'SGD', 'RMSprop']
 param_grid = dict(optimizer=optimizer)
@@ -66,14 +78,15 @@ best_optimizer = grid_result.best_params_['optimizer']
 def create_model2(neurons=10, optimizer=best_optimizer, init_mode='uniform'):
     # create model
     model = Sequential()
-    model.add(Dense(neurons, input_dim=20, activation='sigmoid', kernel_initializer=init_mode))
-    model.add(Dense(2, kernel_initializer=init_mode, activation='softmax'))
+    model.add(Dense(neurons, input_dim=40, activation='sigmoid', kernel_initializer=init_mode))
+    model.add(Dense(3, kernel_initializer=init_mode, activation='softmax'))
     # Compile model
     model.compile(loss='sparse_categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
     return model
 
+
 # create model
-model = KerasClassifier(build_fn=create_model2, epochs=20, batch_size=10,verbose=0)
+model = KerasClassifier(build_fn=create_model2, epochs=50, batch_size=10, verbose=0)
 # define the grid search parameters
 init_mode = ['uniform', 'lecun_uniform', 'normal', 'zero', 'glorot_normal', 'glorot_uniform', 'he_normal', 'he_uniform']
 param_grid = dict(init_mode=init_mode)
@@ -95,14 +108,15 @@ best_init_mode = grid_result.best_params_['init_mode']
 def create_model3(neurons=10, optimizer=best_optimizer, init_mode=best_init_mode, activation='relu'):
     # create model
     model = Sequential()
-    model.add(Dense(neurons, input_dim=20, activation=activation, kernel_initializer=init_mode))
-    model.add(Dense(2, kernel_initializer=init_mode, activation='softmax'))
+    model.add(Dense(neurons, input_dim=40, activation=activation, kernel_initializer=init_mode))
+    model.add(Dense(3, kernel_initializer=init_mode, activation='softmax'))
     # Compile model
     model.compile(loss='sparse_categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
     return model
 
+
 # create model
-model = KerasClassifier(build_fn=create_model3, epochs=20, batch_size=10,verbose=0)
+model = KerasClassifier(build_fn=create_model3, epochs=50, batch_size=10, verbose=0)
 # define the grid search parameters
 activation = ['relu', 'softmax', 'softplus', 'softsign', 'tanh', 'sigmoid', 'hard_sigmoid', 'linear']
 param_grid = dict(activation=activation)
@@ -125,16 +139,17 @@ def create_model4(neurons=10, optimizer=best_optimizer, init_mode=best_init_mode
                   dropout_rate=0.0, weight_constraint=0):
     # create model
     model = Sequential()
-    model.add(Dense(neurons, input_dim=20, activation=activation, kernel_initializer=init_mode,
+    model.add(Dense(neurons, input_dim=40, activation=activation, kernel_initializer=init_mode,
                     kernel_constraint=maxnorm(weight_constraint)))
     model.add(Dropout(dropout_rate))
-    model.add(Dense(2, kernel_initializer=init_mode, activation='softmax'))
+    model.add(Dense(3, kernel_initializer=init_mode, activation='softmax'))
     # Compile model
     model.compile(loss='sparse_categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
     return model
 
+
 # create model
-model = KerasClassifier(build_fn=create_model4, epochs=20, batch_size=10,verbose=0)
+model = KerasClassifier(build_fn=create_model4, epochs=50, batch_size=10, verbose=0)
 # define the grid search parameters
 weight_constraint = [1, 2, 3, 4, 5]
 dropout_rate = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
@@ -159,10 +174,10 @@ def create_model5(neurons=10, optimizer=best_optimizer, init_mode=best_init_mode
                   dropout_rate=best_dropout_rate, weight_constraint=best_weight_constraint):
     # create model
     model = Sequential()
-    model.add(Dense(neurons, input_dim=20, activation=activation, kernel_initializer=init_mode,
+    model.add(Dense(neurons, input_dim=40, activation=activation, kernel_initializer=init_mode,
                     kernel_constraint=maxnorm(weight_constraint)))
     model.add(Dropout(dropout_rate))
-    model.add(Dense(2, activation='softmax'))
+    model.add(Dense(3, activation='softmax'))
     # Compile model
     model.compile(loss='sparse_categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
     return model
