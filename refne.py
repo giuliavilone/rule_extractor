@@ -8,7 +8,7 @@ from sklearn.utils import resample
 from keras.utils import to_categorical
 from keras.models import load_model
 import numpy as np
-from common_functions import perturbator, create_model, model_trainer
+from common_functions import perturbator, create_model, model_train
 from collections import Counter
 import random
 import copy
@@ -306,12 +306,12 @@ model = create_model(X, n_classes, hidden_neurons)
 
 # Training the model on the 5 cross validation datasets
 fold_var = 1
-model_train = True
-if model_train:
+model_traininig = True
+if model_traininig:
     for train_index, val_index in skf.split(X, y):
         X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
         y_train, y_test = y[train_index], y[val_index]
-        model_trainer(X_train, to_categorical(y_train, num_classes=n_classes),
+        model_train(X_train, to_categorical(y_train, num_classes=n_classes),
                       X_test, to_categorical(y_test, num_classes=n_classes), model, 'model_' + str(fold_var) + '.h5')
 
         fold_var += 1

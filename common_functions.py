@@ -12,14 +12,16 @@ def create_model(train_x, num_classes, hidden_nodes):
     return model
 
 
-def model_trainer(train_x, train_y, test_x, test_y, model, model_name, n_epochs=100):
+def model_train(train_x, train_y, test_x, test_y, model, model_name, n_epochs=100, batch_size=10):
     check_pointer = ModelCheckpoint(filepath=model_name,
                                    save_weights_only=False,
-                                   monitor='loss',
+                                   monitor='accuracy',
                                    save_best_only=True,
                                    verbose=1)
-    model.fit(train_x, train_y, validation_data=(test_x, test_y), epochs=n_epochs, callbacks=[check_pointer])
-    return model
+    history = model.fit(train_x, train_y, validation_data=(test_x, test_y), batch_size=batch_size,
+              epochs=n_epochs, callbacks=[check_pointer]
+              )
+    return model, history
 
 
 def perturbator(indf, mu=0, sigma=0.1):

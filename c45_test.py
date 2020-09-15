@@ -8,7 +8,7 @@ import numpy as np
 from scipy.stats import mode
 from sklearn.metrics import accuracy_score
 from sklearn.tree import DecisionTreeClassifier, export_text, export_graphviz
-from common_functions import perturbator, create_model, model_trainer
+from common_functions import perturbator, create_model, model_train
 
 # Global variables
 n_members = 10
@@ -143,7 +143,7 @@ for _ in range(n_members):
     val_index = [x for x in ix if x not in train_index]
     X_train, X_test = X[train_index], X[val_index]
     y_train, y_test = y[train_index], y[val_index]
-    model_trainer(X_train, to_categorical(y_train, num_classes=n_classes),
+    model_train(X_train, to_categorical(y_train, num_classes=n_classes),
                   X_test, to_categorical(y_test, num_classes=n_classes), model, 'c45_model_'+str(fold_var)+'.h5')
 
     fold_var += 1

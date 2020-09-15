@@ -4,7 +4,7 @@ from scipy.io import arff
 from sklearn.preprocessing import LabelEncoder
 from keras.utils import to_categorical
 import numpy as np
-from common_functions import create_model, model_trainer, perturbator
+from common_functions import create_model, model_train, perturbator
 from trepan import Tree, Oracle
 from sklearn.utils import resample
 import sys
@@ -59,7 +59,7 @@ y_train, y_test = y[train_index], y[val_index]
 y_train = to_categorical(y_train, num_classes=n_class)
 y_test = to_categorical(y_test, num_classes=n_class)
 model = create_model(X_train, n_class, n_nodes)
-model = model_trainer(X_train, y_train, X_test, y_test, model, 'trepan_model.h5')
+model = model_train(X_train, y_train, X_test, y_test, model, 'trepan_model.h5')
 oracle = Oracle(model, n_class, X_train)
 tree_obj = Tree(oracle)
 

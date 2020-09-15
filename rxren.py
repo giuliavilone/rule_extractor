@@ -7,7 +7,7 @@ from keras.models import load_model
 import numpy as np
 from sklearn.metrics import accuracy_score
 import copy
-from common_functions import perturbator, create_model, model_trainer
+from common_functions import perturbator, create_model, model_train
 import sys
 
 # Global variable
