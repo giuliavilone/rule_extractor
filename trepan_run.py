@@ -67,7 +67,10 @@ if original_study:
     y_test = np.argmax(y_test, axis=0)
 else:
     parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
-    dataset = parameters.iloc[0]
+    dataset = parameters.iloc[4]
+    print('--------------------------------------------------')
+    print(dataset['dataset'])
+    print('--------------------------------------------------')
     X_train, X_test, y_train, y_test = dataset_uploader(dataset)
     X_train, X_test = X_train.to_numpy(), X_test.to_numpy()
     model = load_model('trained_model_' + dataset['dataset'] + '.h5')

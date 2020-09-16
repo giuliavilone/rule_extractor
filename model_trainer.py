@@ -1,25 +1,10 @@
-from keras.models import Sequential
-from keras.layers import Dense
-from keras.layers import Dropout
-from keras.constraints import maxnorm
 from common_functions import model_train
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 from sklearn.utils import resample
 from keras.utils import to_categorical
+from common_functions import create_model
 import sys
-
-
-def create_model(train_x, n_classes, neurons, optimizer, init_mode, activation, dropout_rate, weight_constraint):
-    # create model
-    model = Sequential()
-    model.add(Dense(neurons, input_dim=train_x.shape[1], activation=activation, kernel_initializer=init_mode,
-                    kernel_constraint=maxnorm(weight_constraint)))
-    model.add(Dropout(dropout_rate))
-    model.add(Dense(n_classes, activation='softmax'))
-    # Compile model
-    model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
-    return model
 
 
 discrete_var = ['checking_status', 'credit_history', 'purpose', 'savings_status', 'employment', 'personal_status',

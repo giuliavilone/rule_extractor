@@ -332,7 +332,10 @@ if original_study:
     ySynth = ensemble_predictions(members, xSynth)
 else:
     parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
-    dataset = parameters.iloc[0]
+    dataset = parameters.iloc[4]
+    print('--------------------------------------------------')
+    print(dataset['dataset'])
+    print('--------------------------------------------------')
     X_train, X_test, y_train, y_test = dataset_uploader(dataset)
     discrete_attributes = []
     continuous_attributes = []

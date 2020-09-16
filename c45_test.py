@@ -154,7 +154,10 @@ if original_study:
     yTot = np.transpose(np.concatenate([ensemble_res, ySynth], axis=1))
 else:
     parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
-    dataset = parameters.iloc[0]
+    dataset = parameters.iloc[4]
+    print('--------------------------------------------------')
+    print(dataset['dataset'])
+    print('--------------------------------------------------')
     X_train, X_test, y_train, y_test = dataset_uploader(dataset)
     X_train, X_test = X_train.to_numpy(), X_test.to_numpy()
     model = load_model('trained_model_' + dataset['dataset'] + '.h5')
@@ -175,8 +178,8 @@ string_data = export_graphviz(clf, out_file=None)
 
 # Showing the rules
 print_decision_tree(clf)
-print(rules)
-print(string_data)
+#print(rules)
+#print(string_data)
 
 predicted_labels = clf.predict(X_test)
 if original_study:

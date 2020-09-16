@@ -1,6 +1,8 @@
+from keras.callbacks import ModelCheckpoint
 from keras.models import Sequential
 from keras.layers import Dense
-from keras.callbacks import ModelCheckpoint
+from keras.layers import Dropout
+from keras.constraints import maxnorm
 import numpy as np
 from scipy.stats import mode
 import pandas as pd
@@ -8,11 +10,25 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.utils import resample
 
 
-def create_model(train_x, num_classes, hidden_nodes):
+def create_model_old(train_x, num_classes, hidden_nodes):
     model = Sequential()
     model.add(Dense(hidden_nodes, input_dim=train_x.shape[1], activation="sigmoid"))
     model.add(Dense(num_classes, activation="softmax"))
     model.compile(loss="categorical_crossentropy", optimizer="adam", metrics=['accuracy'])
+    return model
+
+
+def create_model(train_x, n_classes, neurons, optimizer='Adam', init_mode='uniform',
+                 activation='softmax', dropout_rate=0.0, weight_constraint=0
+                 ):
+    # create model
+    model = Sequential()
+    model.add(Dense(neurons, input_dim=train_x.shape[1], activation=activation, kernel_initializer=init_mode,
+                    kernel_constraint=maxnorm(weight_constraint)))
+    model.add(Dropout(dropout_rate))
+    model.add(Dense(n_classes, activation='softmax'))
+    # Compile model
+    model.compile(loss='categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
     return model
 
 
