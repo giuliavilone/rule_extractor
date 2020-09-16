@@ -33,7 +33,7 @@ def load_all_models(n_models):
     return all_models
 
 
-def synthetic_data_generator(indf, n_samples, discrete=[]):
+def synthetic_data_generator_old(indf, n_samples, discrete=[]):
     """
     Given an input dataframe, the function returns a new dataframe containing random numbers
     generated within the value ranges of the input attributes.
@@ -49,7 +49,22 @@ def synthetic_data_generator(indf, n_samples, discrete=[]):
         else:
             minvalue = indf[column].min()
             maxvalue = indf[column].max()
-            outdf[column] = np.round(np.random.uniform(minvalue, maxvalue, n_samples), 1)
+            outdf[column] = np.round(np.random.uniform(minvalue, maxvalue, n_samples), 4)
+    return outdf
+
+
+def synthetic_data_generator(indf, n_samples):
+    """
+    Given an input dataframe, the function returns a new dataframe containing random numbers
+    generated within the value ranges of the input attributes.
+    :param indf:
+    :param n_samples: integer number of samples to be generated
+    :param discrete
+    :return: outdf: of synthetic data
+    """
+    outdf = pd.DataFrame()
+    for column in indf.columns.tolist():
+        outdf[column] = np.random.choice(np.unique(indf[column]).tolist(), n_samples)
     return outdf
 
 
@@ -73,7 +88,7 @@ def chimerge(data, attr, label):
             lab0 = sorted(set(data[label][data[attr].between(intervals[i][0], intervals[i][1])]))
             lab1 = sorted(set(data[label][data[attr].between(intervals[i + 1][0], intervals[i + 1][1])]))
             if len(lab0) + len(lab1) > 2 or lab0 != lab1:
-                # if lab0 != lab1:
+            # if lab0 != lab1:
                 chi.append(1000000.0)
                 continue
             else:
@@ -139,7 +154,7 @@ def select_random_item(int_list, ex_item_list):
     return new_item
 
 
-def rule_evaluator(df, rule_columns, new_rule, ruleset, out_var, fidelity=0.9, origin=False):
+def rule_evaluator(df, rule_columns, new_rule, ruleset, out_var, fidelity=0, origin=False):
     """
     Evaluate the fidelity of the new rule
     :param rule:
@@ -198,9 +213,11 @@ def rule_maker(df, intervals, col, target_var):
     random.shuffle(col)
     ret = []
     for item in col:
+        print(item)
         attr_list = outdf[[item, target_var]].groupby(item).agg(unique_class=(target_var, 'nunique'),
                                                                 max_class=(target_var, 'max')
                                                                 ).reset_index(drop=False)
+
         new_rules = attr_list[attr_list['unique_class'] == 1]
         if len(new_rules) == 0:
             item1 = select_random_item(col, [item])
@@ -223,7 +240,7 @@ def rule_maker(df, intervals, col, target_var):
         new_col.remove('max_class')
         for index, row in new_rules.iterrows():
             # Evaluate the fidelity of the new rule
-            evaluation = rule_evaluator(outdf, new_col, row, ret, target_var, fidelity=0.8)
+            evaluation = rule_evaluator(outdf, new_col, row, ret, target_var, fidelity=0.1)
             if evaluation:
                 new_dict = {'neuron': new_col}
                 new_dict['class'] = row['max_class'].tolist()
@@ -329,7 +346,7 @@ if original_study:
     # very accurate rules
     synth_samples = X.shape[0] * 2
     xSynth = synthetic_data_generator(X, synth_samples)
-    ySynth = ensemble_predictions(members, xSynth)
+    ySynth = ensemble_predictions(members, xSynth)[0]
 else:
     parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
     dataset = parameters.iloc[4]
@@ -342,22 +359,22 @@ else:
     if dataset['dataset'] == 'credit-g':
         discrete_attributes = ['checking_status', 'credit_history', 'purpose', 'savings_status', 'employment',
                                'personal_status', 'other_parties', 'property_magnitude', 'other_payment_plans',
-                               'housing', 'job', 'own_telephone', 'foreign_worker'
+                               'housing', 'job', 'own_telephone', 'foreign_worker',
                                ]
         continuous_attributes = [item for item in X_train.columns if item not in discrete_attributes]
     else:
         continuous_attributes = X_train.columns.tolist()
     model = load_model('trained_model_' + dataset['dataset'] + '.h5')
     synth_samples = X_train.shape[0] * 2
-    xSynth = synthetic_data_generator(X_train, synth_samples, discrete=discrete_attributes)
+    xSynth = synthetic_data_generator(X_train, synth_samples)
     ySynth = np.argmax(model.predict(xSynth), axis=1)
     n_classes = dataset['classes']
     classes = np.unique(np.concatenate((y_train, y_test), axis=0)).tolist()
 
 
-# Discretizing the continuous attributes
+# Discretising the continuous attributes
 attr_list = xSynth.columns.tolist()
-xSynth[label_col] = ySynth[0]
+xSynth[label_col] = ySynth
 interv_dict = {}
 for attr in attr_list:
     if attr in continuous_attributes:
@@ -369,6 +386,7 @@ for attr in attr_list:
         interv_dict[attr] = [list(a) for a in zip(unique_values, unique_values)]
 
 print(interv_dict)
+
 final_rules = []
 if len(discrete_attributes) > 0:
     out_rule, discreteSynth = rule_maker(xSynth, interv_dict, discrete_attributes, label_col)
