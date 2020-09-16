@@ -43,6 +43,7 @@ print(X.shape)
 print(set(Y))
 print(len(set(Y)))
 
+
 # -------------- Tuning the optimizer -----------------#
 # Function to create model, required for KerasClassifier
 def create_model(neurons=10, optimizer ='adam'):

@@ -1,5 +1,4 @@
 from scipy.io import arff
-from scipy.stats import mode
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import StratifiedKFold
@@ -8,7 +7,7 @@ from sklearn.utils import resample
 from keras.utils import to_categorical
 from keras.models import load_model
 import numpy as np
-from common_functions import perturbator, create_model, model_train
+from common_functions import perturbator, create_model, model_train, ensemble_predictions
 from collections import Counter
 import random
 import copy
@@ -56,15 +55,6 @@ def load_all_models(n_models):
         print('>loaded %s' % filename)
     return all_models
 
-
-def ensemble_predictions(members, testX):
-    # make predictions
-    yhats = [model.predict(testX) for model in members]
-    yhats = np.array(yhats)
-    # combining the members via plurality voting
-    voted_yhats = np.argmax(yhats, axis=2)
-    results = mode(voted_yhats, axis=0)[0]
-    return results
 
 
 def synthetic_data_generator(indf, n_samples, discrete=discrete_attributes):

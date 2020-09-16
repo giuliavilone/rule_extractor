@@ -201,9 +201,9 @@ y_train, y_test = y[train_index], y[val_index]
 # define model
 model = create_model(X, n_classes, hidden_neurons)
 
-model_train = True
-if model_train:
-    model_trainer(X_train, to_categorical(y_train, num_classes=n_classes),
+model_training = True
+if model_training:
+    model_train(X_train, to_categorical(y_train, num_classes=n_classes),
                   X_test, to_categorical(y_test, num_classes=n_classes), model, MODEL_NAME)
 
 model = load_model(MODEL_NAME)

@@ -5,27 +5,10 @@ from sklearn.utils import resample
 from keras.utils import to_categorical
 from keras.models import load_model
 import numpy as np
-from scipy.stats import mode
 from sklearn.metrics import accuracy_score
 from sklearn.tree import DecisionTreeClassifier, export_text, export_graphviz
-from common_functions import perturbator, create_model, model_train
-
-# Global variables
-n_members = 10
-data, meta = arff.loadarff('datasets-UCI/UCI/hepatitis.arff')
-data = pd.DataFrame(data)
-data = data.dropna()
-
-le = LabelEncoder()
-for item in range(len(meta.names())):
-    item_name = meta.names()[item]
-    item_type = meta.types()[item]
-    if item_type == 'nominal':
-        data[item_name] = le.fit_transform(data[item_name].tolist())
-
-target_var = 'Class'
-n_classes = 2
-hidden_neurons = 3
+from common_functions import perturbator, create_model, model_train, ensemble_predictions, dataset_uploader
+import sys
 
 # Functions
 def load_all_models(n_models):
@@ -44,17 +27,6 @@ def load_all_models(n_models):
         all_models.append(model)
         print('>loaded %s' % filename)
     return all_models
-
-
-# make an ensemble prediction for multi-class classification
-def ensemble_predictions(members, testX):
-    # make predictions
-    yhats = [model.predict(testX) for model in members]
-    yhats = np.array(yhats)
-    # combining the members via plurality voting
-    voted_yhats = np.argmax(yhats, axis=2)
-    results = mode(voted_yhats, axis=0)[0]
-    return results
 
 
 def synthetic_data_generator(inarr, n_samples):
@@ -125,44 +97,73 @@ def get_node_depths(tree):
     get_node_depths_(0, 0, tree.children_left, tree.children_right, depths)
     return np.array(depths)
 
+
 # Main code
+# Global variables
+original_study = False
+if original_study:
+    n_members = 10
+    data, meta = arff.loadarff('datasets-UCI/UCI/hepatitis.arff')
+    data = pd.DataFrame(data)
+    data = data.dropna()
 
-# Separating independent variables from the target one
-X = data.drop(columns=[target_var]).to_numpy()
-y = le.fit_transform(data[target_var].tolist())
+    le = LabelEncoder()
+    for item in range(len(meta.names())):
+        item_name = meta.names()[item]
+        item_type = meta.types()[item]
+        if item_type == 'nominal':
+            data[item_name] = le.fit_transform(data[item_name].tolist())
 
+    target_var = 'Class'
+    n_classes = 2
+    hidden_neurons = 3
 
-# define model
-model = create_model(X, n_classes, hidden_neurons)
+    # Separating independent variables from the target one
+    X = data.drop(columns=[target_var]).to_numpy()
+    y = le.fit_transform(data[target_var].tolist())
 
-fold_var = 1
-for _ in range(n_members):
-    # select indexes
-    ix = [i for i in range(len(X))]
-    train_index = resample(ix, replace=True, n_samples=int(len(X)*0.7))
-    val_index = [x for x in ix if x not in train_index]
-    X_train, X_test = X[train_index], X[val_index]
-    y_train, y_test = y[train_index], y[val_index]
-    model_train(X_train, to_categorical(y_train, num_classes=n_classes),
-                  X_test, to_categorical(y_test, num_classes=n_classes), model, 'c45_model_'+str(fold_var)+'.h5')
+    # define model
+    model = create_model(X, n_classes, hidden_neurons)
 
-    fold_var += 1
+    fold_var = 1
+    for _ in range(n_members):
+        # select indexes
+        ix = [i for i in range(len(X))]
+        train_index = resample(ix, replace=True, n_samples=int(len(X)*0.7))
+        val_index = [x for x in ix if x not in train_index]
+        X_train, X_test = X[train_index], X[val_index]
+        y_train, y_test = y[train_index], y[val_index]
+        model_train(X_train, to_categorical(y_train, num_classes=n_classes),
+                      X_test, to_categorical(y_test, num_classes=n_classes), model, 'c45_model_'+str(fold_var)+'.h5')
 
-# load all models
-members = load_all_models(n_members)
-print('Loaded %d models' % len(members))
+        fold_var += 1
 
-ensemble_res = ensemble_predictions(members, X)
-print(accuracy_score(ensemble_res[0], y))
+    # load all models
+    members = load_all_models(n_members)
+    print('Loaded %d models' % len(members))
 
-# Same process of REFNE
-synth_samples = X.shape[0] * 2
-xSynth = synthetic_data_generator(X, synth_samples)
-ySynth = ensemble_predictions(members, xSynth)
+    ensemble_res = ensemble_predictions(members, X)
+    print(accuracy_score(ensemble_res[0], y))
 
-# Concatenate the synthetic array and the array with the labels predicted by the ensemble
-xTot = np.concatenate((X, xSynth), axis=0)
-yTot = np.transpose(np.concatenate([ensemble_res, ySynth], axis=1))
+    # Same process of REFNE
+    synth_samples = X.shape[0] * 2
+    xSynth = synthetic_data_generator(X, synth_samples)
+    ySynth = ensemble_predictions(members, xSynth)
+    # Concatenate the synthetic array and the array with the labels predicted by the ensemble
+    xTot = np.concatenate((X, xSynth), axis=0)
+    yTot = np.transpose(np.concatenate([ensemble_res, ySynth], axis=1))
+else:
+    parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
+    dataset = parameters.iloc[0]
+    X_train, X_test, y_train, y_test = dataset_uploader(dataset)
+    model = load_model('trained_model_' + dataset['dataset'] + '.h5')
+    synth_samples = X_train.shape[0] * 2
+    xSynth = synthetic_data_generator(X_train, synth_samples)
+    ySynth = np.argmax(model.predict(xSynth), axis=1)
+    model_res = np.argmax(model.predict(X_train), axis=1)
+    xTot = np.concatenate((X_train, xSynth), axis=0)
+    yTot = np.transpose(np.concatenate([model_res, ySynth], axis=0))
+
 
 # This uses the CART algorithm (see https://scikit-learn.org/stable/modules/tree.html)
 clf = DecisionTreeClassifier()
@@ -177,7 +178,11 @@ print(rules)
 print(string_data)
 
 predicted_labels = clf.predict(X_test)
-model_test_labels = ensemble_predictions(members, X_test)[0]
+if original_study:
+    model_test_labels = ensemble_predictions(members, X_test)[0]
+else:
+    model_test_labels = np.argmax(model.predict(X_test), axis=1)
+
 
 perturbed_data = perturbator(X_test)
 perturbed_labels = clf.predict(perturbed_data)
