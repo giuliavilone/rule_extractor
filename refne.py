@@ -7,35 +7,12 @@ from sklearn.utils import resample
 from keras.utils import to_categorical
 from keras.models import load_model
 import numpy as np
-from common_functions import perturbator, create_model, model_train, ensemble_predictions
+from common_functions import perturbator, create_model, model_train, ensemble_predictions, dataset_uploader
 from collections import Counter
 import random
 import copy
 import sys
 
-# Global variables
-data, meta = arff.loadarff('datasets-UCI/UCI/diabetes.arff')
-label_col = 'class'
-data = pd.DataFrame(data)
-data = data.dropna().reset_index(drop=True)
-
-le = LabelEncoder()
-# Encoding the nominal fields
-discrete_attributes = []
-continuous_attributes = []
-for item in range(len(meta.names())):
-    item_name = meta.names()[item]
-    item_type = meta.types()[item]
-    if item_type == 'nominal':
-        data[item_name] = le.fit_transform(data[item_name].tolist())
-        if item_name != label_col:
-            discrete_attributes.append(item_name)
-    else:
-        continuous_attributes.append(item_name)
-
-n_members = 2
-n_classes = 2
-hidden_neurons = 3
 
 # Functions
 def load_all_models(n_models):
@@ -56,8 +33,7 @@ def load_all_models(n_models):
     return all_models
 
 
-
-def synthetic_data_generator(indf, n_samples, discrete=discrete_attributes):
+def synthetic_data_generator(indf, n_samples, discrete=[]):
     """
     Given an input dataframe, the function returns a new dataframe containing random numbers
     generated within the value ranges of the input attributes.
@@ -97,7 +73,7 @@ def chimerge(data, attr, label):
             lab0 = sorted(set(data[label][data[attr].between(intervals[i][0], intervals[i][1])]))
             lab1 = sorted(set(data[label][data[attr].between(intervals[i + 1][0], intervals[i + 1][1])]))
             if len(lab0) + len(lab1) > 2 or lab0 != lab1:
-            #if lab0 != lab1:
+                # if lab0 != lab1:
                 chi.append(1000000.0)
                 continue
             else:
@@ -116,7 +92,7 @@ def chimerge(data, attr, label):
         min_chi = min(chi)  # Find the minimal Chi2 for current iteration
         if min_chi == 1000000.0:
             break
-        min_chi_index = [i for i,v in enumerate(chi) if v == min_chi]
+        min_chi_index = [i for i, v in enumerate(chi) if v == min_chi]
         new_intervals = []  # Prepare for the merged new data array
         skip = False
         done = False
@@ -220,14 +196,15 @@ def rule_maker(df, intervals, col, target_var):
     ret = []
     for item in col:
         attr_list = outdf[[item, target_var]].groupby(item).agg(unique_class=(target_var, 'nunique'),
-                                                          max_class=(target_var, 'max')
-                                                          ).reset_index(drop=False)
+                                                                max_class=(target_var, 'max')
+                                                                ).reset_index(drop=False)
         new_rules = attr_list[attr_list['unique_class'] == 1]
         if len(new_rules) == 0:
             item1 = select_random_item(col, [item])
-            attr_list = outdf[[item, item1, target_var]].groupby([item, item1]).agg(unique_class=(target_var, 'nunique'),
-                                                                              max_class=(target_var, 'max')
-                                                                              ).reset_index(drop=False)
+            attr_list = outdf[[item, item1, target_var]].groupby([item, item1]).agg(
+                unique_class=(target_var, 'nunique'),
+                max_class=(target_var, 'max')
+                ).reset_index(drop=False)
             new_rules = attr_list[attr_list['unique_class'] == 1]
             if len(new_rules) == 0:
                 item2 = select_random_item(col, [item, item1])
@@ -281,49 +258,94 @@ def rule_applier(indf, iny, rules):
 
 
 # Main code
-# Separating independent variables from the target one
-X = data.drop(columns=[label_col])
-y = data[label_col]
+label_col = 'class'
+original_study = False
+if original_study:
+    # Global variables
+    data, meta = arff.loadarff('datasets-UCI/UCI/diabetes.arff')
 
-# Extracting the classes to be predicted
-classes = y.unique()
+    data = pd.DataFrame(data)
+    data = data.dropna().reset_index(drop=True)
 
-# Create the object to perform cross validation
-skf = StratifiedKFold(n_splits=n_members, shuffle=True)
+    le = LabelEncoder()
+    # Encoding the nominal fields
+    discrete_attributes = []
+    continuous_attributes = []
+    for item in range(len(meta.names())):
+        item_name = meta.names()[item]
+        item_type = meta.types()[item]
+        if item_type == 'nominal':
+            data[item_name] = le.fit_transform(data[item_name].tolist())
+            if item_name != label_col:
+                discrete_attributes.append(item_name)
+        else:
+            continuous_attributes.append(item_name)
 
-# define model
-model = create_model(X, n_classes, hidden_neurons)
+    n_members = 2
+    n_classes = 2
+    hidden_neurons = 3
+    # Separating independent variables from the target one
+    X = data.drop(columns=[label_col])
+    y = data[label_col]
 
-# Training the model on the 5 cross validation datasets
-fold_var = 1
-model_traininig = True
-if model_traininig:
-    for train_index, val_index in skf.split(X, y):
+    # Extracting the classes to be predicted
+    classes = y.unique()
+
+    # Create the object to perform cross validation
+    skf = StratifiedKFold(n_splits=n_members, shuffle=True)
+
+    # define model
+    model = create_model(X, n_classes, hidden_neurons)
+
+    # Training the model on the 5 cross validation datasets
+    fold_var = 1
+    model_traininig = True
+    if model_traininig:
+        for train_index, val_index in skf.split(X, y):
+            X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
+            y_train, y_test = y[train_index], y[val_index]
+            model_train(X_train, to_categorical(y_train, num_classes=n_classes),
+                        X_test, to_categorical(y_test, num_classes=n_classes), model, 'model_' + str(fold_var) + '.h5')
+
+            fold_var += 1
+    else:
+        ix = [i for i in range(len(X))]
+        train_index = resample(ix, replace=True, n_samples=int(len(X) * 0.5), random_state=0)
+        val_index = [x for x in ix if x not in train_index]
         X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
         y_train, y_test = y[train_index], y[val_index]
-        model_train(X_train, to_categorical(y_train, num_classes=n_classes),
-                      X_test, to_categorical(y_test, num_classes=n_classes), model, 'model_' + str(fold_var) + '.h5')
 
-        fold_var += 1
+    # load all models
+    members = load_all_models(n_members)
+    print('Loaded %d models' % len(members))
+
+    ensemble_res = ensemble_predictions(members, X)
+    print(accuracy_score(ensemble_res[0], y))
+
+    # According to the paper, it is enough to generate a new dataset which is twice the training set to obtain
+    # very accurate rules
+    synth_samples = X.shape[0] * 2
+    xSynth = synthetic_data_generator(X, synth_samples)
+    ySynth = ensemble_predictions(members, xSynth)
 else:
-    ix = [i for i in range(len(X))]
-    train_index = resample(ix, replace=True, n_samples=int(len(X) * 0.5), random_state=0)
-    val_index = [x for x in ix if x not in train_index]
-    X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
-    y_train, y_test = y[train_index], y[val_index]
+    parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
+    dataset = parameters.iloc[1]
+    X_train, X_test, y_train, y_test = dataset_uploader(dataset)
+    discrete_attributes = []
+    continuous_attributes = []
+    if dataset['dataset'] == 'credit-g':
+        discrete_attributes = ['checking_status', 'credit_history', 'purpose', 'savings_status', 'employment',
+                               'personal_status', 'other_parties', 'property_magnitude', 'other_payment_plans',
+                               'housing', 'job', 'own_telephone', 'foreign_worker'
+                               ]
+        continuous_attributes = [item for item in X_train.columns if item not in discrete_attributes]
+    else:
+        continuous_attributes = X_train.columns.tolist()
+    model = load_model('trained_model_' + dataset['dataset'] + '.h5')
+    synth_samples = X_train.shape[0] * 2
+    xSynth = synthetic_data_generator(X_train, synth_samples, discrete=discrete_attributes)
+    ySynth = np.argmax(model.predict(xSynth), axis=1)
 
-# load all models
-members = load_all_models(n_members)
-print('Loaded %d models' % len(members))
-
-ensemble_res = ensemble_predictions(members, X)
-print(accuracy_score(ensemble_res[0], y))
-
-# According to the paper, it is enough to generate a new dataset which is twice the training set to obtain
-# very accurate rules
-synth_samples = X.shape[0] * 2
-xSynth = synthetic_data_generator(X, synth_samples)
-ySynth = ensemble_predictions(members, xSynth)
 
 # Discretizing the continuous attributes
 attr_list = xSynth.columns.tolist()

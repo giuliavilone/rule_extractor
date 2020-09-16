@@ -7,26 +7,11 @@ from keras.models import load_model
 import numpy as np
 from sklearn.metrics import accuracy_score
 import copy
-from common_functions import perturbator, create_model, model_train
+from common_functions import perturbator, create_model, model_train, dataset_uploader
 import sys
 
 # Global variable
 TOLERANCE = 0.01
-MODEL_NAME = 'rxren_model.h5'
-
-data, meta = arff.loadarff('datasets-UCI/UCI/hepatitis.arff')
-label_col = 'Class'
-data = pd.DataFrame(data)
-data = data.dropna()
-le = LabelEncoder()
-for item in range(len(meta.names())):
-    item_name = meta.names()[item]
-    item_type = meta.types()[item]
-    if item_type == 'nominal':
-        data[item_name] = le.fit_transform(data[item_name].tolist())
-
-n_classes = 2
-hidden_neurons = 3
 
 # Functions
 def input_delete(insignificant_index, inDf, inWeight=None):
@@ -186,31 +171,53 @@ def rule_evaluator(x, y, rule_list, class_list):
 
 
 # Main code
+original_study = False
+if original_study:
+    MODEL_NAME = 'rxren_model.h5'
+    data, meta = arff.loadarff('datasets-UCI/UCI/hepatitis.arff')
+    label_col = 'Class'
+    data = pd.DataFrame(data)
+    data = data.dropna()
+    le = LabelEncoder()
+    for item in range(len(meta.names())):
+        item_name = meta.names()[item]
+        item_type = meta.types()[item]
+        if item_type == 'nominal':
+            data[item_name] = le.fit_transform(data[item_name].tolist())
 
-# Separating independent variables from the target one
-X = data.drop(columns=[label_col]).to_numpy()
-y = le.fit_transform(data[label_col].tolist())
+    n_classes = 2
+    hidden_neurons = 3
+    # Separating independent variables from the target one
+    X = data.drop(columns=[label_col]).to_numpy()
+    y = le.fit_transform(data[label_col].tolist())
 
 
-ix = [i for i in range(len(X))]
-train_index = resample(ix, replace=True, n_samples=int(len(X)*0.5), random_state=0)
-val_index = [x for x in ix if x not in train_index]
-X_train, X_test = X[train_index], X[val_index]
-y_train, y_test = y[train_index], y[val_index]
+    ix = [i for i in range(len(X))]
+    train_index = resample(ix, replace=True, n_samples=int(len(X)*0.5), random_state=0)
+    val_index = [x for x in ix if x not in train_index]
+    X_train, X_test = X[train_index], X[val_index]
+    y_train, y_test = y[train_index], y[val_index]
 
-# define model
-model = create_model(X, n_classes, hidden_neurons)
+    # define model
+    model = create_model(X, n_classes, hidden_neurons)
 
-model_training = True
-if model_training:
-    model_train(X_train, to_categorical(y_train, num_classes=n_classes),
-                  X_test, to_categorical(y_test, num_classes=n_classes), model, MODEL_NAME)
+    model_training = True
+    if model_training:
+        model_train(X_train, to_categorical(y_train, num_classes=n_classes),
+                      X_test, to_categorical(y_test, num_classes=n_classes), model, MODEL_NAME)
+else:
+    parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
+    dataset = parameters.iloc[0]
+    MODEL_NAME = 'trained_model_' + dataset['dataset'] + '.h5'
+    X_train, X_test, y_train, y_test = dataset_uploader(dataset)
 
 model = load_model(MODEL_NAME)
 weights = np.array(model.get_weights())
 results = model.predict(X_train)
 results = np.argmax(results, axis=1)
-correctX = X_train[[results[i] == y_train[i] for i in range(len(y_train))]]
+print(X_train)
+print(len(y_train))
+correctX = X_train.loc([results[i] == y_train[i] for i in range(len(y_train))])
 correcty = y_train[[results[i] == y_train[i] for i in range(len(y_train))]]
 
 acc = accuracy_score(results, y_train)

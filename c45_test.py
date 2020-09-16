@@ -156,6 +156,7 @@ else:
     parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
     dataset = parameters.iloc[0]
     X_train, X_test, y_train, y_test = dataset_uploader(dataset)
+    X_train, X_test = X_train.to_numpy(), X_test.to_numpy()
     model = load_model('trained_model_' + dataset['dataset'] + '.h5')
     synth_samples = X_train.shape[0] * 2
     xSynth = synthetic_data_generator(X_train, synth_samples)

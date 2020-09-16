@@ -59,11 +59,13 @@ def dataset_uploader(item, target_var='class'):
         for var in discrete_var:
             dataset[var] = le.fit_transform(dataset[var].tolist())
     # Separating independent variables from the target one
-    X = dataset.drop(columns=[target_var]).to_numpy()
+    # X = dataset.drop(columns=[target_var]).to_numpy()
+    X = dataset.drop(columns=[target_var])
     y = le.fit_transform(dataset[target_var].tolist())
     ix = [i for i in range(len(X))]
-    train_index = resample(ix, replace=True, n_samples=int(len(X) * 0.7))
+    train_index = resample(ix, replace=False, n_samples=int(len(X) * 0.7))
     val_index = [x for x in ix if x not in train_index]
-    X_train, X_test = X[train_index], X[val_index]
+    X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
+    # X_train, X_test = X[train_index], X[val_index]
     y_train, y_test = y[train_index], y[val_index]
     return X_train, X_test, y_train, y_test
