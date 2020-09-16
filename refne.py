@@ -139,7 +139,7 @@ def select_random_item(int_list, ex_item_list):
     return new_item
 
 
-def rule_evaluator(df, rule_columns, new_rule, ruleset, out_var, fidelity=0.9):
+def rule_evaluator(df, rule_columns, new_rule, ruleset, out_var, fidelity=0.9, origin=False):
     """
     Evaluate the fidelity of the new rule
     :param rule:
@@ -175,7 +175,10 @@ def rule_evaluator(df, rule_columns, new_rule, ruleset, out_var, fidelity=0.9):
             extra_df = synthetic_data_generator(tot_df, extra_samples)
             tot_df = pd.concat([tot_df, extra_df], axis=0)
     # Evaluating the fidelity of the rule under evaluation
-    tot_df[out_var] = ensemble_predictions(members, tot_df)[0]
+    if origin:
+        tot_df[out_var] = ensemble_predictions(members, tot_df)[0]
+    else:
+        tot_df[out_var] = np.argmax(model.predict(tot_df), axis=1)
     agreement = len(tot_df[tot_df[out_var] == new_rule['max_class']]) / len(tot_df)
     return agreement > fidelity
 
@@ -329,7 +332,7 @@ if original_study:
     ySynth = ensemble_predictions(members, xSynth)
 else:
     parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
-    dataset = parameters.iloc[1]
+    dataset = parameters.iloc[0]
     X_train, X_test, y_train, y_test = dataset_uploader(dataset)
     discrete_attributes = []
     continuous_attributes = []
@@ -345,6 +348,8 @@ else:
     synth_samples = X_train.shape[0] * 2
     xSynth = synthetic_data_generator(X_train, synth_samples, discrete=discrete_attributes)
     ySynth = np.argmax(model.predict(xSynth), axis=1)
+    n_classes = dataset['classes']
+    classes = np.unique(np.concatenate((y_train, y_test), axis=0)).tolist()
 
 
 # Discretizing the continuous attributes

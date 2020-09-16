@@ -13,6 +13,7 @@ import sys
 # Global variable
 TOLERANCE = 0.01
 
+
 # Functions
 def input_delete(insignificant_index, inDf, inWeight=None):
     """
@@ -23,13 +24,13 @@ def input_delete(insignificant_index, inDf, inWeight=None):
     :param inWeight:
     :return: the trimmed weights and input vector
     """
-    outDf = copy.deepcopy(inDf)
-    outDf = np.delete(outDf, insignificant_index, 1)
+    out_df = copy.deepcopy(inDf)
+    out_df = np.delete(out_df, insignificant_index, 1)
     outWeight = None
     if inWeight is not None:
         outWeight = copy.deepcopy(inWeight)
         outWeight[0] = np.delete(outWeight[0], insignificant_index, 0)
-    return outDf, outWeight
+    return out_df, outWeight
 
 
 def model_pruned_prediction(inputX, w):
@@ -210,14 +211,13 @@ else:
     dataset = parameters.iloc[0]
     MODEL_NAME = 'trained_model_' + dataset['dataset'] + '.h5'
     X_train, X_test, y_train, y_test = dataset_uploader(dataset)
+    n_classes = dataset['classes']
 
 model = load_model(MODEL_NAME)
 weights = np.array(model.get_weights())
 results = model.predict(X_train)
 results = np.argmax(results, axis=1)
-print(X_train)
-print(len(y_train))
-correctX = X_train.loc([results[i] == y_train[i] for i in range(len(y_train))])
+correctX = X_train[[results[i] == y_train[i] for i in range(len(y_train))]]
 correcty = y_train[[results[i] == y_train[i] for i in range(len(y_train))]]
 
 acc = accuracy_score(results, y_train)
