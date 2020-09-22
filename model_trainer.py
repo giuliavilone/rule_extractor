@@ -7,11 +7,6 @@ from common_functions import create_model
 import sys
 
 
-discrete_var = ['checking_status', 'credit_history', 'purpose', 'savings_status', 'employment', 'personal_status',
-                'other_parties', 'property_magnitude', 'other_payment_plans', 'housing', 'job', 'own_telephone',
-                'foreign_worker'
-                ]
-
 parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
 print(parameters)
 target_var = 'class'
@@ -21,9 +16,10 @@ out_lst = []
 for index, item in parameters.iterrows():
     dataset = pd.read_csv('datasets-UCI/Used_data/' + item['dataset'] + '.csv')
     print(item['dataset'])
-    if item['dataset'] == 'credit-g':
-        for var in discrete_var:
-            dataset[var] = le.fit_transform(dataset[var].tolist())
+    col_types = dataset.dtypes
+    for index, value in col_types.items():
+        if value == 'object':
+            dataset[index] = le.fit_transform(dataset[index].tolist())
     # Separating independent variables from the target one
     X = dataset.drop(columns=[target_var]).to_numpy()
     y = le.fit_transform(dataset[target_var].tolist())
@@ -38,7 +34,8 @@ for index, item in parameters.iterrows():
                          )
     _, history = model_train(X_train, to_categorical(y_train, num_classes=item['classes']),
                 X_test, to_categorical(y_test, num_classes=item['classes']), model,
-                'trained_model_' + item['dataset'] + '.h5')
+                'trained_model_' + item['dataset'] + '.h5',
+                n_epochs=item['epochs'], batch_size=item['batch_size'])
     max_index = history.history['accuracy'].index(max(history.history['accuracy']))
     out_lst.append([item['dataset'], history.history['accuracy'][max_index],
                     history.history['val_accuracy'][max_index]]

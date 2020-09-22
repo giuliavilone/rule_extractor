@@ -1,5 +1,6 @@
 from scipy.stats import friedmanchisquare
 import pandas as pd
+import numpy as np
 
 data = pd.read_csv('metrics.csv')
 

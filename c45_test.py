@@ -154,7 +154,7 @@ if original_study:
     yTot = np.transpose(np.concatenate([ensemble_res, ySynth], axis=1))
 else:
     parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
-    dataset = parameters.iloc[4]
+    dataset = parameters.iloc[7]
     print('--------------------------------------------------')
     print(dataset['dataset'])
     print('--------------------------------------------------')

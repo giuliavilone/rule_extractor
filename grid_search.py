@@ -16,7 +16,7 @@ seed = 7
 numpy.random.seed(seed)
 # load dataset
 le = LabelEncoder()
-load_arff = True
+load_arff = False
 if load_arff:
     dataset, meta = arff.loadarff('datasets-UCI/UCI/waveform-5000.arff')
     label_col = 'class'
@@ -32,25 +32,30 @@ if load_arff:
     X = dataset.drop(columns=[label_col]).to_numpy()
     Y = le.fit_transform(dataset[label_col].tolist())
 else:
-    dataset = pd.read_csv('datasets-UCI/pageblocks/page-blocks.csv')
+    dataset = pd.read_csv('datasets-UCI/Used_data/mushroom.csv')
+    col_types = dataset.dtypes
+    for index, value in col_types.items():
+        if value == 'object':
+            dataset[index] = le.fit_transform(dataset[index].tolist())
     label_col = 'class'
     # split into input (X) and output (Y) variables
     # dataset = dataset.drop(columns=['sequence_name'])
     X = dataset.drop(columns=[label_col]).to_numpy()
     Y = dataset[label_col].tolist()
 
+INPUT_DIM = X.shape[1]
+OUT_CLASS = len(set(Y))
 print(X.shape)
 print(set(Y))
 print(len(set(Y)))
-
 
 # -------------- Tuning the optimizer -----------------#
 # Function to create model, required for KerasClassifier
 def create_model(neurons=10, optimizer ='adam'):
     # create model
     model = Sequential()
-    model.add(Dense(neurons, input_dim=40, activation='sigmoid'))
-    model.add(Dense(3, activation="softmax"))
+    model.add(Dense(neurons, input_dim=INPUT_DIM, activation='sigmoid'))
+    model.add(Dense(OUT_CLASS, activation="softmax"))
     # Compile model
     model.compile(loss='sparse_categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
     return model
@@ -79,8 +84,8 @@ best_optimizer = grid_result.best_params_['optimizer']
 def create_model2(neurons=10, optimizer=best_optimizer, init_mode='uniform'):
     # create model
     model = Sequential()
-    model.add(Dense(neurons, input_dim=40, activation='sigmoid', kernel_initializer=init_mode))
-    model.add(Dense(3, kernel_initializer=init_mode, activation='softmax'))
+    model.add(Dense(neurons, input_dim=INPUT_DIM, activation='sigmoid', kernel_initializer=init_mode))
+    model.add(Dense(OUT_CLASS, kernel_initializer=init_mode, activation='softmax'))
     # Compile model
     model.compile(loss='sparse_categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
     return model
@@ -109,8 +114,8 @@ best_init_mode = grid_result.best_params_['init_mode']
 def create_model3(neurons=10, optimizer=best_optimizer, init_mode=best_init_mode, activation='relu'):
     # create model
     model = Sequential()
-    model.add(Dense(neurons, input_dim=40, activation=activation, kernel_initializer=init_mode))
-    model.add(Dense(3, kernel_initializer=init_mode, activation='softmax'))
+    model.add(Dense(neurons, input_dim=INPUT_DIM, activation=activation, kernel_initializer=init_mode))
+    model.add(Dense(OUT_CLASS, kernel_initializer=init_mode, activation='softmax'))
     # Compile model
     model.compile(loss='sparse_categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
     return model
@@ -140,10 +145,10 @@ def create_model4(neurons=10, optimizer=best_optimizer, init_mode=best_init_mode
                   dropout_rate=0.0, weight_constraint=0):
     # create model
     model = Sequential()
-    model.add(Dense(neurons, input_dim=40, activation=activation, kernel_initializer=init_mode,
+    model.add(Dense(neurons, input_dim=INPUT_DIM, activation=activation, kernel_initializer=init_mode,
                     kernel_constraint=maxnorm(weight_constraint)))
     model.add(Dropout(dropout_rate))
-    model.add(Dense(3, kernel_initializer=init_mode, activation='softmax'))
+    model.add(Dense(OUT_CLASS, kernel_initializer=init_mode, activation='softmax'))
     # Compile model
     model.compile(loss='sparse_categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
     return model
@@ -175,10 +180,10 @@ def create_model5(neurons=10, optimizer=best_optimizer, init_mode=best_init_mode
                   dropout_rate=best_dropout_rate, weight_constraint=best_weight_constraint):
     # create model
     model = Sequential()
-    model.add(Dense(neurons, input_dim=40, activation=activation, kernel_initializer=init_mode,
+    model.add(Dense(neurons, input_dim=INPUT_DIM, activation=activation, kernel_initializer=init_mode,
                     kernel_constraint=maxnorm(weight_constraint)))
     model.add(Dropout(dropout_rate))
-    model.add(Dense(3, activation='softmax'))
+    model.add(Dense(OUT_CLASS, activation='softmax'))
     # Compile model
     model.compile(loss='sparse_categorical_crossentropy', optimizer=optimizer, metrics=['accuracy'])
     return model

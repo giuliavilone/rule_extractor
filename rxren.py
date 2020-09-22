@@ -219,12 +219,12 @@ if original_study:
                     X_test, to_categorical(y_test, num_classes=n_classes), model, MODEL_NAME)
 else:
     parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
-    dataset = parameters.iloc[4]
+    dataset = parameters.iloc[3]
     print('--------------------------------------------------')
     print(dataset['dataset'])
     print('--------------------------------------------------')
     MODEL_NAME = 'trained_model_' + dataset['dataset'] + '.h5'
-    X_train, X_test, y_train, y_test = dataset_uploader(dataset)
+    X_train, X_test, y_train, y_test, _, _ = dataset_uploader(dataset)
     y = np.concatenate((y_train, y_test), axis=0)
     X_train, X_test = X_train.to_numpy(), X_test.to_numpy()
     n_classes = dataset['classes']
@@ -280,11 +280,11 @@ for rule in final_rules:
     indexes = np.where((neuron >= rule['limits'][0]) & (neuron <= rule['limits'][1]))
     rule_labels[indexes] = rule['class']
     p_neuron = perturbed_data[:, rule['neuron']]
-    indexes = np.where((p_neuron >= rule['limits'][0]) & (p_neuron <= rule['limits'][1]))
-    perturbed_labels[indexes] = rule['class']
+    p_indexes = np.where((p_neuron >= rule['limits'][0]) & (p_neuron <= rule['limits'][1]))
+    perturbed_labels[p_indexes] = rule['class']
 
-rule_labels[np.where(np.isnan(rule_labels))] = 1
-perturbed_labels[np.where(np.isnan(perturbed_labels))] = 1
+rule_labels[np.where(np.isnan(rule_labels))] = n_classes + 10
+perturbed_labels[np.where(np.isnan(perturbed_labels))] = n_classes + 10
 
 complete = 0
 correct = 0

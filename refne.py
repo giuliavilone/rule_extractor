@@ -217,16 +217,15 @@ def rule_maker(df, intervals, col, target_var):
         attr_list = outdf[[item, target_var]].groupby(item).agg(unique_class=(target_var, 'nunique'),
                                                                 max_class=(target_var, 'max')
                                                                 ).reset_index(drop=False)
-
         new_rules = attr_list[attr_list['unique_class'] == 1]
-        if len(new_rules) == 0:
+        if (len(new_rules) == 0) and (len(col) > 1):
             item1 = select_random_item(col, [item])
             attr_list = outdf[[item, item1, target_var]].groupby([item, item1]).agg(
                 unique_class=(target_var, 'nunique'),
                 max_class=(target_var, 'max')
                 ).reset_index(drop=False)
             new_rules = attr_list[attr_list['unique_class'] == 1]
-            if len(new_rules) == 0:
+            if (len(new_rules) == 0) and (len(col) > 2):
                 item2 = select_random_item(col, [item, item1])
                 attr_list = outdf[[item, item1, item2, target_var]].groupby([item, item1, item2]).agg(
                     unique_class=(target_var, 'nunique'),
@@ -238,6 +237,7 @@ def rule_maker(df, intervals, col, target_var):
         new_col = new_rules.columns.values.tolist()
         new_col.remove('unique_class')
         new_col.remove('max_class')
+        print(new_rules.shape)
         for index, row in new_rules.iterrows():
             # Evaluate the fidelity of the new rule
             evaluation = rule_evaluator(outdf, new_col, row, ret, target_var, fidelity=0.1)
@@ -349,21 +349,11 @@ if original_study:
     ySynth = ensemble_predictions(members, xSynth)[0]
 else:
     parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
-    dataset = parameters.iloc[4]
+    dataset = parameters.iloc[3]
     print('--------------------------------------------------')
     print(dataset['dataset'])
     print('--------------------------------------------------')
-    X_train, X_test, y_train, y_test = dataset_uploader(dataset)
-    discrete_attributes = []
-    continuous_attributes = []
-    if dataset['dataset'] == 'credit-g':
-        discrete_attributes = ['checking_status', 'credit_history', 'purpose', 'savings_status', 'employment',
-                               'personal_status', 'other_parties', 'property_magnitude', 'other_payment_plans',
-                               'housing', 'job', 'own_telephone', 'foreign_worker',
-                               ]
-        continuous_attributes = [item for item in X_train.columns if item not in discrete_attributes]
-    else:
-        continuous_attributes = X_train.columns.tolist()
+    X_train, X_test, y_train, y_test, discrete_attributes, continuous_attributes = dataset_uploader(dataset)
     model = load_model('trained_model_' + dataset['dataset'] + '.h5')
     synth_samples = X_train.shape[0] * 2
     xSynth = synthetic_data_generator(X_train, synth_samples)
@@ -385,24 +375,17 @@ for attr in attr_list:
         unique_values = np.unique(xSynth[attr]).tolist()
         interv_dict[attr] = [list(a) for a in zip(unique_values, unique_values)]
 
-print(interv_dict)
 
 final_rules = []
 if len(discrete_attributes) > 0:
     out_rule, discreteSynth = rule_maker(xSynth, interv_dict, discrete_attributes, label_col)
     final_rules += out_rule
-    print("Rules with discrete attributes only")
-    print(final_rules)
     if len(final_rules) == 0 or len(discreteSynth) > 0:
         out_rule, discreteSynth = rule_maker(discreteSynth, interv_dict, continuous_attributes, label_col)
         final_rules += out_rule
-        print("Rules with discrete and continuous attributes")
-        print(final_rules)
 else:
     out_rule, contSynth = rule_maker(xSynth, interv_dict, continuous_attributes, label_col)
     final_rules += out_rule
-    print("Rules with continuous attributes only")
-    print(final_rules)
 
 print(final_rules)
 

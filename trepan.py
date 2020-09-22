@@ -21,7 +21,13 @@ class Oracle:
 
         for i in range(self.num_features):
             data = self.X[:, i]
-            kernel = gaussian_kde(data, bw_method='silverman')
+            try:
+                kernel = gaussian_kde(data, bw_method='silverman')
+            except:
+                # If the categorical variables have all the same code (like [0,0,0]) the gaussian_kde goes into
+                # error and it is necessary to add a small noise
+                data = data + 0.001 * np.random.randn(data.shape[0])
+                kernel = gaussian_kde(data, bw_method='silverman')
             self.train_dist.append(kernel)
 
     def generate_instance(self, constraint):
@@ -146,7 +152,7 @@ class Tree:
         self.initial_data = oracle.X
         self.initial_labels = oracle.y
         self.num_examples = len(oracle.X)
-        self.tree_params = {"tree_size": 50, "split_min": 100, "num_feature_splits": 10}
+        self.tree_params = {"tree_size": 50, "split_min": 100, "num_feature_splits": 15}
         self.num_nodes = 0
         self.max_levels = 0
 

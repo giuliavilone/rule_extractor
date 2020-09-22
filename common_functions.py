@@ -65,15 +65,19 @@ def ensemble_predictions(members, testX):
 
 
 def dataset_uploader(item, target_var='class'):
-    discrete_var = ['checking_status', 'credit_history', 'purpose', 'savings_status', 'employment', 'personal_status',
-                    'other_parties', 'property_magnitude', 'other_payment_plans', 'housing', 'job', 'own_telephone',
-                    'foreign_worker'
-                    ]
     le = LabelEncoder()
     dataset = pd.read_csv('datasets-UCI/Used_data/' + item['dataset'] + '.csv')
-    if item['dataset'] == 'credit-g':
-        for var in discrete_var:
-            dataset[var] = le.fit_transform(dataset[var].tolist())
+    col_types = dataset.dtypes
+    out_disc = []
+    out_cont = []
+    for index, value in col_types.items():
+        if value == 'object':
+            dataset[index] = le.fit_transform(dataset[index].tolist())
+            if index != 'class':
+                out_disc.append(index)
+        else:
+            if index != 'class':
+                out_cont.append(index)
     # Separating independent variables from the target one
     # X = dataset.drop(columns=[target_var]).to_numpy()
     X = dataset.drop(columns=[target_var])
@@ -84,4 +88,4 @@ def dataset_uploader(item, target_var='class'):
     X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
     # X_train, X_test = X[train_index], X[val_index]
     y_train, y_test = y[train_index], y[val_index]
-    return X_train, X_test, y_train, y_test
+    return X_train, X_test, y_train, y_test, out_disc, out_cont
