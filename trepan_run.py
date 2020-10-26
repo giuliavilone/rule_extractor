@@ -4,7 +4,7 @@ from scipy.io import arff
 from sklearn.preprocessing import LabelEncoder
 from keras.utils import to_categorical
 import numpy as np
-from common_functions import create_model, model_train, perturbator, dataset_uploader
+from common_functions import create_model, model_train, perturbator, dataset_uploader, rule_metrics_calculator
 from trepan import Tree, Oracle
 from sklearn.utils import resample
 from keras.models import load_model
@@ -67,11 +67,11 @@ if original_study:
     y_test = np.argmax(y_test, axis=0)
 else:
     parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
-    dataset = parameters.iloc[4]
+    dataset = parameters.iloc[3]
     print('--------------------------------------------------')
     print(dataset['dataset'])
     print('--------------------------------------------------')
-    X_train, X_test, y_train, y_test = dataset_uploader(dataset)
+    X_train, X_test, y_train, y_test, _, _ = dataset_uploader(dataset)
     X_train, X_test = X_train.to_numpy(), X_test.to_numpy()
     model = load_model('trained_model_' + dataset['dataset'] + '.h5')
     n_class = dataset['classes']
@@ -88,34 +88,22 @@ final_rules = tree_obj.leaf_values(root)
 
 # calculate metrics
 num_test_examples = X_test.shape[0]
-correct = 0
-fidel = 0
-rob = 0
+
 predi_tree = []
 predi_torch = np.argmax(model.predict(X_test), axis=1)
 perturbed_data = perturbator(X_test)
 perturbed_labels = np.argmax(model.predict(perturbed_data), axis=1)
 
-
+rule_labels = []
 for i in range(0, num_test_examples):
     instance = X_test[i, :]
     instance_label = tree_obj.predict(instance, root)
+    rule_labels.append(instance_label)
     predi_tree.append(instance_label)
-    fidel += (instance_label == predi_torch[i])
-    correct += (instance_label == y_test[i])
-    perturbed_instance = perturbed_data[i, :]
-    perturbed_instance_label = tree_obj.predict(perturbed_instance, root)
-    rob += (instance_label == perturbed_instance_label)
 
-fidelity = fidel / num_test_examples
-print("Fidelity of the ruleset is : " + str(fidelity))
+
 completeness = len(predi_tree) / num_test_examples
-print("Completeness of the ruleset is : " + str(completeness))
-correctness = correct / num_test_examples
-print("Correctness of the ruleset is : " + str(correctness))
-robustness = rob / num_test_examples
-print("Robustness of the ruleset is : " + str(robustness))
-print("Number of rules : " + str(len(final_rules)))
 avg_length = sum(final_rules) / len(final_rules)
-print("Average rule length: " + str(avg_length))
 
+rule_metrics_calculator(num_test_examples, y_test, rule_labels, predi_torch, perturbed_labels,
+                        len(final_rules), completeness, avg_length)

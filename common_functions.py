@@ -18,8 +18,8 @@ def create_model_old(train_x, num_classes, hidden_nodes):
     return model
 
 
-def create_model(train_x, n_classes, neurons, optimizer='Adam', init_mode='uniform',
-                 activation='softmax', dropout_rate=0.0, weight_constraint=0
+def create_model(train_x, n_classes, neurons, optimizer='Adam', init_mode='glorot_uniform',
+                 activation='sigmoid', dropout_rate=0.0, weight_constraint=None
                  ):
     # create model
     model = Sequential()
@@ -64,7 +64,7 @@ def ensemble_predictions(members, testX):
     return results
 
 
-def dataset_uploader(item, target_var='class'):
+def dataset_uploader(item, target_var='class', train_split=0.7):
     le = LabelEncoder()
     dataset = pd.read_csv('datasets-UCI/Used_data/' + item['dataset'] + '.csv')
     col_types = dataset.dtypes
@@ -83,9 +83,36 @@ def dataset_uploader(item, target_var='class'):
     X = dataset.drop(columns=[target_var])
     y = le.fit_transform(dataset[target_var].tolist())
     ix = [i for i in range(len(X))]
-    train_index = resample(ix, replace=False, n_samples=int(len(X) * 0.7))
+    train_index = resample(ix, replace=False, n_samples=int(len(X) * train_split))
     val_index = [x for x in ix if x not in train_index]
     X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
     # X_train, X_test = X[train_index], X[val_index]
     y_train, y_test = y[train_index], y[val_index]
     return X_train, X_test, y_train, y_test, out_disc, out_cont
+
+
+def rule_metrics_calculator(num_examples, y_test, rule_labels, model_labels, perturbed_labels, rule_n,
+                            complete, avg_length):
+    """
+    Calculate the correctness, fidelity, robustness and number of rules. The completeness, average length and number
+    of rules are calculated in a different way for each rule extractor and passed as inputs
+    :return:
+    """
+    correct = 0
+    fidel = 0
+    rob = 0
+    for i in range(0, num_examples):
+        fidel += (rule_labels[i] == model_labels[i])
+        correct += (rule_labels[i] == y_test[i])
+        rob += (rule_labels[i] == perturbed_labels[i])
+
+    print("Completeness of the ruleset is: " + str(complete))
+    correctness = correct / num_examples
+    print("Correctness of the ruleset is: " + str(correctness))
+    fidelity = fidel / num_examples
+    print("Fidelity of the ruleset is: " + str(fidelity))
+    robustness = rob / num_examples
+    print("Robustness of the ruleset is: " + str(robustness))
+    print("Number of rules : " + str(rule_n))
+    print("Average rule length: " + str(avg_length))
+

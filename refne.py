@@ -8,6 +8,7 @@ from keras.utils import to_categorical
 from keras.models import load_model
 import numpy as np
 from common_functions import perturbator, create_model, model_train, ensemble_predictions, dataset_uploader
+from common_functions import rule_metrics_calculator
 from collections import Counter
 import random
 import copy
@@ -405,27 +406,13 @@ for rule in final_rules:
     p_neuron = perturbed_data[rule['neuron']]
     perturbed_labels = rule_applier(p_neuron, rule_labels, rule)
 
-completeness = sum(~np.isnan(rule_labels)) / num_test_examples
-print("Completeness of the ruleset is : " + str(completeness))
 
+y_test = y_test.tolist()
+
+avg_length = sum([len(item['neuron']) for item in final_rules]) / len(final_rules)
+completeness = sum(~np.isnan(rule_labels)) / num_test_examples
 rule_labels[np.where(np.isnan(rule_labels))] = max(classes) + 10
 perturbed_labels[np.where(np.isnan(perturbed_labels))] = max(classes) + 10
 
-correct = 0
-fidel = 0
-rob = 0
-y_test = y_test.tolist()
-for i in range(0, num_test_examples):
-    fidel += (rule_labels[i] == predicted_labels[i])
-    correct += (rule_labels[i] == y_test[i])
-    rob += (predicted_labels[i] == perturbed_labels[i])
-
-fidelity = fidel / num_test_examples
-print("Fidelity of the ruleset is : " + str(fidelity))
-correctness = correct / num_test_examples
-print("Correctness of the ruleset is : " + str(correctness))
-robustness = rob / num_test_examples
-print("Robustness of the ruleset is : " + str(robustness))
-print("Number of rules : " + str(len(final_rules)))
-avg_length = sum([len(item['neuron']) for item in final_rules]) / len(final_rules)
-print("Average rule length: " + str(avg_length))
+rule_metrics_calculator(num_test_examples, y_test, rule_labels, predicted_labels, perturbed_labels, len(final_rules),
+                        completeness, avg_length)

@@ -8,6 +8,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score
 from sklearn.tree import DecisionTreeClassifier, export_text, export_graphviz
 from common_functions import perturbator, create_model, model_train, ensemble_predictions, dataset_uploader
+from common_functions import rule_metrics_calculator
 import sys
 
 # Functions
@@ -158,7 +159,7 @@ else:
     print('--------------------------------------------------')
     print(dataset['dataset'])
     print('--------------------------------------------------')
-    X_train, X_test, y_train, y_test = dataset_uploader(dataset)
+    X_train, X_test, y_train, y_test, _, _ = dataset_uploader(dataset)
     X_train, X_test = X_train.to_numpy(), X_test.to_numpy()
     model = load_model('trained_model_' + dataset['dataset'] + '.h5')
     synth_samples = X_train.shape[0] * 2
@@ -192,23 +193,8 @@ perturbed_data = perturbator(X_test)
 perturbed_labels = clf.predict(perturbed_data)
 
 num_test_examples = X_test.shape[0]
-correct = 0
-fidel = 0
-rob = 0
-
-for i in range(0, num_test_examples):
-    fidel += (predicted_labels[i] == model_test_labels[i])
-    correct += (predicted_labels[i] == y_test[i])
-    rob += (predicted_labels[i] == perturbed_labels[i])
-
-fidelity = fidel / num_test_examples
-print("Fidelity of the ruleset is : " + str(fidelity))
 completeness = len(predicted_labels) / num_test_examples
-print("Completeness of the ruleset is : " + str(completeness))
-correctness = correct / num_test_examples
-print("Correctness of the ruleset is : " + str(correctness))
-robustness = rob / num_test_examples
-print("Robustness of the ruleset is : " + str(robustness))
-print("Number of rules: ", clf.get_n_leaves())
 depths = get_node_depths(clf.tree_)
-print("Average rule length: ", np.mean(depths))
+
+rule_metrics_calculator(num_test_examples, y_test, predicted_labels, model_test_labels, perturbed_labels,
+                        clf.get_n_leaves(), completeness, np.mean(depths))
