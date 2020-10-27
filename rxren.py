@@ -197,6 +197,7 @@ def rule_evaluator(x, y, rule_list, class_list):
 # Global variable
 TOLERANCE = 0.01
 
+# Loading dataset
 parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
 dataset_par = parameters.iloc[8]
 print('--------------------------------------------------')

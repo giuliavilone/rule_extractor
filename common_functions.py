@@ -67,6 +67,7 @@ def ensemble_predictions(members, testX):
 def dataset_uploader(item, target_var='class', train_split=0.7):
     le = LabelEncoder()
     dataset = pd.read_csv('datasets-UCI/Used_data/' + item['dataset'] + '.csv')
+    dataset = dataset.dropna().reset_index()
     col_types = dataset.dtypes
     out_disc = []
     out_cont = []
@@ -79,14 +80,12 @@ def dataset_uploader(item, target_var='class', train_split=0.7):
             if index != 'class':
                 out_cont.append(index)
     # Separating independent variables from the target one
-    # X = dataset.drop(columns=[target_var]).to_numpy()
     X = dataset.drop(columns=[target_var])
     y = le.fit_transform(dataset[target_var].tolist())
     ix = [i for i in range(len(X))]
     train_index = resample(ix, replace=False, n_samples=int(len(X) * train_split))
     val_index = [x for x in ix if x not in train_index]
     X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
-    # X_train, X_test = X[train_index], X[val_index]
     y_train, y_test = y[train_index], y[val_index]
     return X_train, X_test, y_train, y_test, out_disc, out_cont
 

@@ -1,11 +1,9 @@
-from scipy.io import arff
 import pandas as pd
-from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import accuracy_score
-from sklearn.utils import resample
 from keras.utils import to_categorical
 from keras.models import load_model
+from keras.optimizers import SGD, Adagrad, Adam, Nadam
 import numpy as np
 from common_functions import perturbator, create_model, model_train, ensemble_predictions, dataset_uploader
 from common_functions import rule_metrics_calculator
@@ -25,7 +23,7 @@ def load_all_models(n_models):
     all_models = list()
     for i in range(n_models):
         # define filename for this ensemble
-        filename = 'model_' + str(i + 1) + '.h5'
+        filename = 'refne_model_' + str(i + 1) + '.h5'
         # load model from file
         model = load_model(filename)
         # add to list of members
@@ -279,62 +277,45 @@ def rule_applier(indf, iny, rules):
 
 
 # Main code
+parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
+dataset_par = parameters.iloc[8]
+print('--------------------------------------------------')
+print(dataset_par['dataset'])
+print('--------------------------------------------------')
+
 label_col = 'class'
-original_study = False
+original_study = True
 if original_study:
-    # Global variables
-    data, meta = arff.loadarff('datasets-UCI/UCI/diabetes.arff')
-
-    data = pd.DataFrame(data)
-    data = data.dropna().reset_index(drop=True)
-
-    le = LabelEncoder()
-    # Encoding the nominal fields
-    discrete_attributes = []
-    continuous_attributes = []
-    for item in range(len(meta.names())):
-        item_name = meta.names()[item]
-        item_type = meta.types()[item]
-        if item_type == 'nominal':
-            data[item_name] = le.fit_transform(data[item_name].tolist())
-            if item_name != label_col:
-                discrete_attributes.append(item_name)
-        else:
-            continuous_attributes.append(item_name)
+    X_train, X_test, y_train, y_test, discrete_attributes, continuous_attributes = dataset_uploader(dataset_par)
+    X = pd.concat([X_train, X_test], ignore_index=True)
+    y = np.concatenate((y_train, y_test))
 
     n_members = 2
-    n_classes = 2
-    hidden_neurons = 3
-    # Separating independent variables from the target one
-    X = data.drop(columns=[label_col])
-    y = data[label_col]
 
     # Extracting the classes to be predicted
-    classes = y.unique()
+    classes = np.unique(y).tolist()
 
     # Create the object to perform cross validation
     skf = StratifiedKFold(n_splits=n_members, shuffle=True)
 
     # define model
-    model = create_model(X, n_classes, hidden_neurons)
+    model = create_model(X, dataset_par['classes'], dataset_par['neurons'], eval(dataset_par['optimizer']),
+                         dataset_par['init_mode'], dataset_par['activation'], dataset_par['dropout_rate'],
+                         weight_constraint=eval(dataset_par['weight_constraint'])
+                         )
 
     # Training the model on the 5 cross validation datasets
     fold_var = 1
-    model_traininig = True
-    if model_traininig:
-        for train_index, val_index in skf.split(X, y):
-            X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
-            y_train, y_test = y[train_index], y[val_index]
-            model_train(X_train, to_categorical(y_train, num_classes=n_classes),
-                        X_test, to_categorical(y_test, num_classes=n_classes), model, 'model_' + str(fold_var) + '.h5')
-
-            fold_var += 1
-    else:
-        ix = [i for i in range(len(X))]
-        train_index = resample(ix, replace=True, n_samples=int(len(X) * 0.5), random_state=0)
-        val_index = [x for x in ix if x not in train_index]
+    for train_index, val_index in skf.split(X, y):
         X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
         y_train, y_test = y[train_index], y[val_index]
+        model_train(X_train, to_categorical(y_train, num_classes=dataset_par['classes']),
+                    X_test, to_categorical(y_test, num_classes=dataset_par['classes']), model,
+                    'refne_model_' + str(fold_var) + '.h5',
+                    n_epochs=dataset_par['epochs'], batch_size=dataset_par['batch_size'])
+
+        fold_var += 1
+
 
     # load all models
     members = load_all_models(n_members)
@@ -349,17 +330,11 @@ if original_study:
     xSynth = synthetic_data_generator(X, synth_samples)
     ySynth = ensemble_predictions(members, xSynth)[0]
 else:
-    parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
-    dataset = parameters.iloc[3]
-    print('--------------------------------------------------')
-    print(dataset['dataset'])
-    print('--------------------------------------------------')
-    X_train, X_test, y_train, y_test, discrete_attributes, continuous_attributes = dataset_uploader(dataset)
-    model = load_model('trained_model_' + dataset['dataset'] + '.h5')
+    X_train, X_test, y_train, y_test, discrete_attributes, continuous_attributes = dataset_uploader(dataset_par)
+    model = load_model('trained_model_' + dataset_par['dataset'] + '.h5')
     synth_samples = X_train.shape[0] * 2
     xSynth = synthetic_data_generator(X_train, synth_samples)
     ySynth = np.argmax(model.predict(xSynth), axis=1)
-    n_classes = dataset['classes']
     classes = np.unique(np.concatenate((y_train, y_test), axis=0)).tolist()
 
 
