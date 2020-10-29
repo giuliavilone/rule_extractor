@@ -7,9 +7,21 @@ from sklearn.metrics import accuracy_score
 import copy
 from common_functions import perturbator, model_train, dataset_uploader, create_model, rule_metrics_calculator
 import sys
-np.random.seed(3)
+
+#np.random.seed(3)
+np.random.seed(1)
+
 
 # Functions
+def prediction_reshape(prediction_list):
+    if len(prediction_list[0]) > 1:
+        ret = np.argmax(prediction_list, axis=1)
+    else:
+        ret = np.reshape(prediction_list, -1).tolist()
+        ret = [round(x) for x in ret]
+    return ret
+
+
 def input_delete(insignificant_index, in_df, in_weight=None):
     """
     Delete the variable of the input vector corresponding the insignificant input neurons and, if required, the
@@ -39,10 +51,11 @@ def model_pruned_prediction(insignificant_index, in_df, in_item, in_weight=None)
     input_x, w = input_delete(insignificant_index, in_df, in_weight=in_weight)
     new_m = create_model(input_x, in_item['classes'], in_item['neurons'], eval(in_item['optimizer']),
                          in_item['init_mode'], in_item['activation'], in_item['dropout_rate'],
-                         eval(in_item['weight_constraint']))
+                         eval(in_item['weight_constraint']), loss='binary_crossentropy',
+                         out_activation='sigmoid')
     new_m.set_weights(w)
     ret = new_m.predict(input_x)
-    ret = np.argmax(ret, axis=1)
+    ret = prediction_reshape(ret)
     return ret
 
 
@@ -74,13 +87,12 @@ def network_pruning(w, correct_x, correct_y, test_x, test_y, accuracy, in_item=N
         pruning = True
     else:
         pruning = False
-
     theta = min(error_list)
     while pruning:
         insignificant_neurons = [i for i, e in enumerate(error_list) if e <= theta]
         new_res = model_pruned_prediction(insignificant_neurons, test_x, in_item, in_weight=w)
         new_acc = accuracy_score(new_res, test_y)
-        if new_acc >= accuracy - TOLERANCE:
+        if new_acc >= accuracy:
             new_error_list = [e for i, e in enumerate(error_list) if e > theta]
             # Leaving at least one significant neuron
             if len(new_error_list) > 1:
@@ -92,19 +104,34 @@ def network_pruning(w, correct_x, correct_y, test_x, test_y, accuracy, in_item=N
     return miss_classified_list, sorted(insignificant_neurons), new_acc, theta
 
 
-def rule_limits_calculator(c_x, c_y, miss_classified_list, significant_neurons, error, alpha=0.5):
-    print(significant_neurons)
-    print(miss_classified_list)
+def correct_examples_finder(insignificant_index, significant_index, correct_x, correct_y, in_item, in_weight=None):
+    """
+
+    :param input_x: model's weights
+    :param w: theta
+    :param in_item: correctX
+    :return: numpy array with the output classes predicted by the pruned model
+    """
+    ret = {}
+    for item in significant_index:
+        remove_indexes = [x for x in significant_index if x != item]
+        remove_indexes += insignificant_index
+        res = model_pruned_prediction(remove_indexes, correct_x, in_item, in_weight=in_weight)
+        ret[item] = [i for i in range(len(correct_y)) if res[i] == correct_y[i]]
+    return ret
+
+
+def rule_limits_calculator(c_x, c_y, classified_list, significant_neurons, error, alpha=0.5):
     c_tot = np.column_stack((c_x, c_y))
     grouped_miss_class = []
     for i in significant_neurons:
-        miss_class = c_tot[miss_classified_list[i]]
+        ucm_class = c_tot[classified_list[i]]
         # Splitting the misclassified input values according to their output classes
         grouped_miss_class = grouped_miss_class + [{'neuron': i, 'class': k,
-                                                    'limits': [min(miss_class[:, i][miss_class[:, -1] == k]),
-                                                               max(miss_class[:, i][miss_class[:, -1] == k])]}
-                                                   for k in np.unique(miss_class[:, -1])
-                                                   if len(miss_class[:, i][miss_class[:, -1] == k]) > (error * alpha)]
+                                                    'limits': [min(ucm_class[:, i][ucm_class[:, -1] == k]),
+                                                               max(ucm_class[:, i][ucm_class[:, -1] == k])]}
+                                                   for k in np.unique(ucm_class[:, -1])
+                                                   if len(ucm_class[:, i][ucm_class[:, -1] == k]) > (error * alpha)]
     return grouped_miss_class
 
 
@@ -124,6 +151,20 @@ def rule_combiner(rule_set):
     return rule_dict
 
 
+def ruleset_accuracy(x_arr, y_list, rule_set):
+    predicted_y = np.empty(x_arr.shape[0])
+    predicted_y[:] = np.NaN
+    for r in rule_set:
+        print(r)
+        minimum = r['limits'][0]
+        maximum = r['limits'][1]
+        c = r['class']
+        print('Minimum: ', minimum, 'and Maximum: ', maximum, 'and Class: ', c)
+        predicted_y[(x_arr[:, r['neuron']] >= minimum) * (x_arr[:, r['neuron']] <= maximum)] = int(c)
+        print(predicted_y)
+    return predicted_y
+
+
 def rule_pruning(train_x, train_y, rule_set):
     """
     Pruning the rules
@@ -132,6 +173,8 @@ def rule_pruning(train_x, train_y, rule_set):
     :param rule_set:
     :return:
     """
+    ruleset_accuracy(train_x, train_y, rule_set)
+    sys.exit()
     rule_dict = rule_combiner(rule_set)
     for i, v in enumerate(rule_dict['class']):
         predicted_y = np.empty(train_y.shape)
@@ -150,11 +193,12 @@ def rule_pruning(train_x, train_y, rule_set):
             # It is necessary to remove the nan values otherwise it is not possible to calculate accuracy
             predicted_y_single[np.isnan(predicted_y_single)] = n_classes + 10
             single_accuracies += [accuracy_score(predicted_y_single, train_y)]
-        predicted_y[np.isnan(predicted_y)] = n_classes + 10
-        overall_accuracy = accuracy_score(predicted_y, train_y)
-        ixs = position[np.array(single_accuracies >= overall_accuracy, dtype=bool)]
-        for ix_index in ixs:
-            rule_set.pop(ix_index)
+    print(single_accuracies)
+    predicted_y[np.isnan(predicted_y)] = n_classes + 10
+    overall_accuracy = accuracy_score(predicted_y, train_y)
+    ixs = position[np.array(single_accuracies >= overall_accuracy, dtype=bool)]
+    for ix_index in ixs:
+        rule_set.pop(ix_index)
     return rule_set
 
 
@@ -193,17 +237,13 @@ def rule_evaluator(x, y, rule_list, class_list):
 
 
 # Main code
-# Global variable
-TOLERANCE = 0.01
-
 
 # Loading dataset
 parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
-dataset_par = parameters.iloc[8]
+dataset_par = parameters.iloc[10]
 print('--------------------------------------------------')
 print(dataset_par['dataset'])
 print('--------------------------------------------------')
-
 
 MODEL_NAME = 'trained_model_' + dataset_par['dataset'] + '.h5'
 X_train, X_test, y_train, y_test, _, _ = dataset_uploader(dataset_par, train_split=dataset_par['split'])
@@ -213,35 +253,45 @@ n_classes = dataset_par['classes']
 
 model = create_model(X_train, dataset_par['classes'], dataset_par['neurons'], eval(dataset_par['optimizer']),
                      dataset_par['init_mode'], dataset_par['activation'], dataset_par['dropout_rate'],
-                     weight_constraint=eval(dataset_par['weight_constraint'])
+                     weight_constraint=eval(dataset_par['weight_constraint']), loss='binary_crossentropy',
+                     out_activation='sigmoid'
                      )
-model_train(X_train, to_categorical(y_train, num_classes=n_classes),
-            X_test, to_categorical(y_test, num_classes=n_classes), model, MODEL_NAME,
+model_train(X_train, y_train, X_test, y_test, model, MODEL_NAME,
             n_epochs=dataset_par['epochs'], batch_size=dataset_par['batch_size']
             )
 
 # model = load_model(MODEL_NAME)
 weights = np.array(model.get_weights())
-results = model.predict(X_train)
-results = np.argmax(results, axis=1)
+results = prediction_reshape(model.predict_classes(X_train))
+
 
 correctX = X_train[[results[i] == y_train[i] for i in range(len(y_train))]]
 print('Number of correctly classified examples', correctX.shape)
 correcty = y_train[[results[i] == y_train[i] for i in range(len(y_train))]]
 acc = accuracy_score(results, y_train)
 print("Accuracy of original model on the train dataset: ", acc)
-test_pred = np.argmax(model.predict(X_test), axis=1)
+test_pred = prediction_reshape(model.predict(X_test))
 test_acc = accuracy_score(test_pred, y_test)
 print("Accuracy of original model on the test dataset: ", test_acc)
 
-miss_list, ins_index, new_accuracy, err = network_pruning(weights, correctX, correcty, X_test, y_test, test_acc,
-                                                          dataset_par
+miss_list, ins_index, new_accuracy, err = network_pruning(weights, correctX, correcty, X_test, y_test,
+                                                          test_acc, dataset_par
                                                           )
 
 significant_index = [i for i in range(weights[0].shape[0]) if i not in ins_index]
 print("Accuracy of pruned network", new_accuracy)
 
-rule_limits = rule_limits_calculator(correctX, correcty, miss_list, significant_index, err, alpha=0.5)
+print(correctX.shape)
+corr_list = correct_examples_finder(ins_index, significant_index, correctX, correcty, dataset_par, in_weight=weights)
+
+print(len(corr_list))
+print(miss_list)
+print(ins_index)
+sys.exit()
+final_list = [list(dict.fromkeys(lst + corr_list)) for lst in miss_list]
+
+rule_limits = rule_limits_calculator(correctX, correcty, final_list, significant_index, err, alpha=0.5)
+print(rule_limits)
 
 if len(rule_limits) > 1:
     rule_limits = rule_pruning(X_train, y_train, rule_limits)

@@ -1,13 +1,9 @@
 import pandas as pd
-from scipy.io import arff
-#from sklearn.model_selection import StratifiedKFold
-from sklearn.preprocessing import LabelEncoder
 from keras.utils import to_categorical
 from keras.optimizers import SGD, Adagrad, Adam, Nadam
 import numpy as np
 from common_functions import create_model, model_train, perturbator, dataset_uploader, rule_metrics_calculator
 from trepan import Tree, Oracle
-from sklearn.utils import resample
 from keras.models import load_model
 import sys
 
