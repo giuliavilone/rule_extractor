@@ -98,7 +98,7 @@ class Constraint:
         return list(set(feature_indices))
 
 
-class Node():
+class Node:
     def __init__(self, data, labels, constraints):
         self.data = data
         self.labels = labels
@@ -108,10 +108,11 @@ class Node():
         self.right = None
         self.dominant = self.get_dominant_class(labels)
         self.misclassified = self.get_misclassified_count(labels)
-
+        # This is to rule out features that have been already used to generate splits to reach this node
         self.blacklisted_features = self.constraints.get_constrained_features()
 
-    def get_dominant_class(self, labels):
+    @staticmethod
+    def get_dominant_class(labels):
         """
         This function returns the "dominant" class of this node, i.e., the class with the highest count of the examples
         in this node.
@@ -125,12 +126,7 @@ class Node():
             class_counts[label] += 1
 
         # get the class with the max count
-        max_count = 0
-        max_class = 0
-        for label in class_counts:
-            if class_counts[label] > max_count:
-                max_class = label
-                max_count = class_counts[label]
+        max_class = max(class_counts, key=class_counts.get)
         return max_class
 
     def get_misclassified_count(self, labels):
@@ -148,6 +144,9 @@ class Node():
 
 class Tree:
     def __init__(self, oracle):
+        # Create root node with constrains set equal to [], initial data equal to the entire training dataset
+        # and labels predicted by the oracle model
+        self.root = self.construct_node(self.initial_data, self.initial_labels, Constraint())
         self.oracle = oracle
         self.initial_data = oracle.X
         self.initial_labels = oracle.y
@@ -156,26 +155,37 @@ class Tree:
         self.num_nodes = 0
         self.max_levels = 0
 
+    @staticmethod
+    def construct_node(data, labels, constraints):
+        """ Input Args - data: the training data that this node has
+            Output Args - A Node variable
+        """
+        return Node(data, labels, constraints)
+
+    @staticmethod
+    def is_leaf(node):
+        return node.left is None and node.right is None
+
     def get_priority(self, node):
         reach_n = float(len(node.data)) / self.num_examples
         print(f"reach_n={reach_n}")
         fidelity_n = self.get_fidelity(node)
         print(f"fidelity_n={fidelity_n}")
+        # Multiplied by -1 to order the nodes with the highest priority in decreasing order
         priority = -1 * reach_n * (1 - fidelity_n)
         return float(priority)
 
     def get_fidelity(self, node):
-        l2e = 1 - (float(node.misclassified)/self.num_examples)
+        l2e = 1 - (float(node.misclassified) / self.num_examples)
         return l2e
 
     def build_tree(self):
         """Main method which builds the tree and returns the root
         through which the entire tree can be accessed"""
         import queue as Q
-        # node_queue = Q.PriorityQueue(maxsize=self.tree_params["tree_size"])
-        node_queue = Q.PriorityQueue()
+        node_queue = Q.PriorityQueue(maxsize=self.tree_params["tree_size"])
+        # node_queue = Q.PriorityQueue()
 
-        self.root = self.construct_node(self.initial_data, self.initial_labels, Constraint())
         node_queue.put((self.get_priority(self.root), self.num_nodes, self.root), block=False)
         self.num_nodes += 1
 
@@ -184,7 +194,7 @@ class Tree:
             priority, _, node = node_queue.get()
             node = self.add_instances(node)
             node = self.split(node)
-            if node.left is None and node.right is None:
+            if node.left is None and node.right is None:  # meaning that the node is a leaf
                 continue
             else:
                 left_prio = self.get_priority(node.left)
@@ -217,6 +227,11 @@ class Tree:
         return node
 
     def get_best_split(self, node):
+        """
+        Return the feature with the best split among those that have not been already used to reach the node
+        :param node: node under analysis which contains also the list of the features previously split to reach it
+        :return: the feature with the best split and its best split point
+        """
         min_mse = float("inf")
         best_split_point = None
         best_feat = None
@@ -235,7 +250,8 @@ class Tree:
         return best_feat, best_split_point
 
     def split(self, node):
-        """Decide the best split and split the node """
+        """Decide the best split and split the node. In case it is not possible to determine the best split, the
+         node is set as a leaf"""
         best_feat, best_split_point = self.get_best_split(node)
         if best_feat is None:
             node.left = None
@@ -259,10 +275,20 @@ class Tree:
         return node
 
     def calc_mse(self, data):
+        """
+        Calculate the minimum squared error
+        :param data:
+        :return: minimum squared error value
+        """
         mean = np.mean(data)
         return np.mean((data - mean) ** 2)
 
     def feature_split(self, feature_data):
+        """
+        Find the best binary split for the input feature
+        :param feature_data: training data related to a single independent feature
+        :return: the point where the data must be split and its minimum squared error
+        """
         split_points = np.linspace(start=min(feature_data), stop=max(feature_data),
                                    num=self.tree_params["num_feature_splits"]
                                    )[1:-1]
@@ -281,9 +307,6 @@ class Tree:
 
         return best_split_point, mse
 
-    def is_leaf(self, node):
-        return node.left is None and node.right is None
-
     def predict(self, instance, root):
         if self.is_leaf(root):
             return root.dominant
@@ -291,14 +314,6 @@ class Tree:
             return self.predict(instance, root.left)
         else:
             return self.predict(instance, root.right)
-
-    def construct_node(self, data, labels, constraints):
-        """ Input Args - data: the training data that this node has
-            Output Args - A Node variable
-        """
-        return Node(data, labels, constraints)
-
-    # print tree
 
     def assign_levels(self, root, level):
         root.level = level
@@ -328,7 +343,9 @@ class Tree:
             if root.right is not None:
                 self.print_tree(root.right, level)
 
-    def leaf_values(self, root, ret_list=[]):
+    def leaf_values(self, root, ret_list=None):
+        if ret_list is None:
+            ret_list = []
         if self.is_leaf(root):
             ret_list += [root.level]
         if root.left is not None:
