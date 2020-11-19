@@ -1,24 +1,24 @@
 # From https://github.com/nakumgaurav/XAI-TREPAN-for-Regression/blob/master/descision_tree.py
 import numpy as np
-from scipy.stats import gaussian_kde
+from scipy.stats import gaussian_kde, entropy
 import copy
 
 
 class Oracle:
-    def __init__(self, network, num_classes, dataset):
+    def __init__(self, network, num_classes, dataset, discrete_feature):
         self.network = network
         self.num_classes = num_classes
         self.X = dataset
         self.y = self.get_oracle_labels(self.X)
+        self.disc = discrete_feature
         self.num_features = self.X.shape[-1]
         self.construct_training_distribution()
+        self.train_dist = []
 
     def construct_training_distribution(self):
         """Get the density estimates for each feature using a kernel density estimator.
         Any estimator could be used as described here:
         https://ned.ipac.caltech.edu/level5/March02/Silverman/paper.pdf """
-        self.train_dist = []
-
         for i in range(self.num_features):
             data = self.X[:, i]
             try:
@@ -35,7 +35,14 @@ class Oracle:
         instance = np.zeros(self.num_features)
         for feature_no in range(self.num_features):
             while True:
-                sampled_val = self.train_dist[feature_no].resample(1)[0]
+                # According to the paper, if the variable is categorical the value must be selected according to
+                # the frequency of the discrete values
+                if feature_no in self.disc:
+                    values, prob = np.unique(self.X[:, feature_no], return_counts=True)
+                    prob = prob / sum(prob)
+                    sampled_val = np.random.choice(values, 1, p=prob)[0]
+                else:
+                    sampled_val = self.train_dist[feature_no].resample(1)[0]
                 if constraint.satisfy_feature(sampled_val, feature_no):
                     break
 
@@ -163,8 +170,90 @@ class Tree:
         return Node(data, labels, constraints)
 
     @staticmethod
-    def is_leaf(node):
+    def is_leaf(node) -> object:
         return node.left is None and node.right is None
+
+    @staticmethod
+    def get_entropy(labels):
+        """
+        Takes a list of labels, and calculates the entropy.
+        """
+        if len(labels) == 0:
+            return 0
+        labels_prob = [labels.count(i) / len(labels) for i in set(labels)]
+        return entropy(labels_prob, base=2)
+
+    def get_gain(self, labels, split_1, split_2):
+        """
+        Calculates the entropy gain from the two splits
+        """
+        orig_ent = self.get_entropy(labels)
+        after_ent = (self.get_entropy(labels[split_1]) * (sum(split_1) / len(labels)) +
+                     self.get_entropy(labels[split_2]) * (sum(split_2) / len(labels)))
+        return orig_ent - after_ent
+
+    def binary_info_gain(self, feature, threshold, samples, labels):
+        """
+        Takes a feature and a threshold, examples and their
+        labels, and find the best feature and breakpoint to split on to maximise
+        information gain.
+        Assumes only two classes. Would need to be altered if more are required.
+        """
+        # Get two halves of threshold
+        split1 = samples[:, feature] >= threshold
+        split2 = np.invert(split1)
+        # Get entropy after split (remembering to weight by no of examples in each
+        # half of split)
+        return self.get_gain(labels, split1, split2)
+
+    def mofn_info_gain(self, mofntest, samples, labels):
+        """
+        Takes an m-of-n test with a set of samples and labels, and calculates the information gain provided by the test.
+
+        Structure of an m-of-n test object: (m, [(feat_1, thresh_1, greater_1)...(feat_n, thresh_n, greater_n)])
+        Where m = number of tests that must be passed (i.e. m in m-of-n)
+        feat_i = the feature of the ith test
+        thresh_i = the threshold of the ith test
+        greater_i = a boolean: If true, value must be >= than threshold to pass the test.
+                               If false, it must be < threshold.
+        """
+        # Unpack the tests structure
+        m = mofntest[0]
+        sep_tests = mofntest[1]
+        # List comprehension to generate a boolean index that tells us which samples
+        # passed the test.
+        split_test = np.array([samples[:, sep[0]] >= sep[1] if sep[2] else
+                              samples[:, sep[0]] < sep[1] for sep in sep_tests])
+        # Now check whether the number of tests passed per sample is higher than m
+        split1 = sum(split_test) >= m
+        split2 = np.invert(split1)
+        # Calculate and return gain
+        return self.get_gain(labels, split1, split2)
+
+    @staticmethod
+    def expand_mofn_test(test, feature, threshold, greater, increment_m):
+        """
+        Constructs and returns a new m-of-n test using the passed test and
+        other parameters.
+        """
+        # Check for feature redundancy
+        for feat in test[1]:
+            if feature == feat[0]:
+                if greater == feat[2]:
+                    # Just return the unmodified existing test if we'd add a threshold with same feature and sign
+                    return test
+                else:
+                    # Also just return the same if the two tests would overlap
+                    if (greater and threshold <= feat[1]) or (not greater and threshold >= feat[1]):
+                        return test
+        # If we didn't find redundancy, actually create the test
+        if increment_m:
+            new_m = test[0] + 1
+        else:
+            new_m = test[0]
+        new_feats = list(test[1])
+        new_feats.append((feature, threshold, greater))
+        return [new_m, new_feats]
 
     def get_priority(self, node):
         reach_n = float(len(node.data)) / self.num_examples
