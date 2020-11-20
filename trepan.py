@@ -1,4 +1,5 @@
 # From https://github.com/nakumgaurav/XAI-TREPAN-for-Regression/blob/master/descision_tree.py
+# and from https://github.com/KesterJ/TREPAN/blob/master/TREPAN-skeleton.py
 import numpy as np
 from scipy.stats import gaussian_kde, entropy
 import copy
@@ -158,7 +159,8 @@ class Tree:
         self.initial_data = oracle.X
         self.initial_labels = oracle.y
         self.num_examples = len(oracle.X)
-        self.tree_params = {"tree_size": 50, "split_min": 100, "num_feature_splits": 15}
+        # Improvement is the percentage by which gain should improve on addition of a new test. (Can be from 1.0+)
+        self.tree_params = {"tree_size": 50, "split_min": 100, "num_feature_splits": 15, 'test_improvement': 1.1}
         self.num_nodes = 0
         self.max_levels = 0
 
@@ -192,7 +194,7 @@ class Tree:
                      self.get_entropy(labels[split_2]) * (sum(split_2) / len(labels)))
         return orig_ent - after_ent
 
-    def binary_info_gain(self, feature, threshold, samples, labels):
+    def binary_info_gain(self, threshold, samples, labels):
         """
         Takes a feature and a threshold, examples and their
         labels, and find the best feature and breakpoint to split on to maximise
@@ -200,7 +202,7 @@ class Tree:
         Assumes only two classes. Would need to be altered if more are required.
         """
         # Get two halves of threshold
-        split1 = samples[:, feature] >= threshold
+        split1 = samples >= threshold
         split2 = np.invert(split1)
         # Get entropy after split (remembering to weight by no of examples in each
         # half of split)
@@ -220,8 +222,7 @@ class Tree:
         # Unpack the tests structure
         m = mofntest[0]
         sep_tests = mofntest[1]
-        # List comprehension to generate a boolean index that tells us which samples
-        # passed the test.
+        # List comprehension to generate a boolean index that tells us which samples passed the test.
         split_test = np.array([samples[:, sep[0]] >= sep[1] if sep[2] else
                               samples[:, sep[0]] < sep[1] for sep in sep_tests])
         # Now check whether the number of tests passed per sample is higher than m
@@ -254,6 +255,82 @@ class Tree:
         new_feats = list(test[1])
         new_feats.append((feature, threshold, greater))
         return [new_m, new_feats]
+
+    def make_mofn_tests(self, best_test, tests, samples, labels):
+        """
+        Finds the best m-of-n test, using a beam width of 2.
+
+        NOTES:
+        -NEEDS TO KNOW HOW TO COLLAPSE TESTS WHEN TWO REDUNDANT THINGS ARE PRESENT
+            e.g. 2-of {y, z, x, ¬x} -> 1-of {y, z}
+        -NEEDS TO KNOW WHICH TESTS WERE ALREADY USED ON THIS BRANCH, AND NOT USE THOSE FEATURES AGAIN - CAN BE DONE
+        OUTSIDE FUNCTION BY PASSING SUBSET OF SAMPLES
+        -NEEDS TO AVOID USING TWO TESTS ON THE SAME LITERAL e.g. x > 0.5 and x > 0.7
+        """
+        # Initialise beam with best test and its negation
+        init_gain = self.binary_info_gain(best_test[1], samples[:, best_test[0]], labels)
+        beam = [[1, [(best_test[0], best_test[1], False)]], [1, [(best_test[0], best_test[1], True)]]]
+        beaming = np.array([init_gain, init_gain])
+        # Initialise current beam (which will be modified within the loops)
+        current_beam = np.array(beam)
+        current_gains = np.array(beaming)
+        beam_changed = True
+        n = 1
+        # Set up loop to repeat until beam isn't changed
+        while beam_changed:
+            print('Test of size %d...' % n)
+            n = n + 1
+            beam_changed = False
+            # Loop over the current best m-of-n tests in beam
+            for test in beam:
+                # Loop over the single-features in candidate tests dict
+                for feature in tests:
+                    # Loop over the thresholds for the feature
+                    for threshold in tests[feature]:
+                        # Loop over greater than/lesser than tests
+                        for greater in [True, False]:
+                            # Loop over m+1-of-n+1 and m-of-n+1 tests
+                            for increment_m in [True, False]:
+                                # Add selected feature+threshold to to current test
+                                new_test = self.expand_mofn_test(test, feature, threshold, greater, increment_m)
+                                # Get info gain and compare it
+                                gain = self.mofn_info_gain(new_test, samples, labels)
+                                # Compare gains
+                                if gain > self.tree_params['test_improvement'] * min(current_gains):
+                                    # Replace worst in beam if gain better than worst in beam
+                                    current_beam[np.argmin(current_gains)] = new_test
+                                    current_gains[np.argmin(current_gains)] = gain
+                                    beam_changed = True
+            # Set new tests in beam and associated gains
+            beam = list(current_beam)
+            beaming = np.array(current_gains)
+        # Return the best test in beam
+        return beam[np.argmax(beaming)]
+
+    def make_candidate_tests(self, feat_values, labels):
+        """
+        A function that should take one feature and all samples, and return the the possible breakpoints for the
+        input feature. These are the midpoints between any two samples that do not have the same label.
+        """
+        # Get unique values for feature
+        values = np.unique(feat_values)
+        breakpoints = []
+        # Loop over values and check if diff classes between values
+        for value in range(len(values) - 1):
+            # Check if different classes in associated labels, find midpoint if so
+            labels1 = labels[feat_values == values[value]]
+            labels2 = labels[feat_values == values[value + 1]]
+            l1unique = list(np.unique(labels1))
+            l2unique = list(np.unique(labels2))
+            if l1unique != l2unique or len(l1unique) > 1 or len(l2unique) > 1:
+                midpoint = (values[value] + values[value + 1]) / 2
+                breakpoints.append(midpoint)
+        # Trim list of breakpoints to 20 if too long
+        if len(breakpoints) > self.tree_params["num_feature_splits"]:
+            idx = np.rint(np.linspace(0, len(breakpoints) - 1, num=20)).astype(int)
+            breakpoints = [breakpoints[i] for i in idx]
+        # Add list of breakpoints to feature dict
+        return breakpoints
 
     def get_priority(self, node):
         reach_n = float(len(node.data)) / self.num_examples
@@ -324,24 +401,31 @@ class Tree:
         min_mse = float("inf")
         best_split_point = None
         best_feat = None
+        best_gain = 0
+        tests = {}
 
         for i in range(self.oracle.num_features):
             if i in node.blacklisted_features:
                 continue
 
-            split_point, mse = self.feature_split(node.data[:, i])
+            split_point, test_gain, all_split_points = self.feature_split(node.data[:, i], node.labels)
+            tests[i] = all_split_points
 
-            if mse < min_mse:
+            if best_gain < test_gain:
                 best_feat = i
                 best_split_point = split_point
-                min_mse = mse
-
-        return best_feat, best_split_point
+                best_gain = test_gain
+        if best_split_point is not None:
+            m_of_n_test = self.make_mofn_tests([best_feat, best_split_point], tests, node.data, node.labels)
+        else:
+            m_of_n_test = [1, [best_feat, best_split_point, None]]
+        return m_of_n_test
 
     def split(self, node):
         """Decide the best split and split the node. In case it is not possible to determine the best split, the
          node is set as a leaf"""
-        best_feat, best_split_point = self.get_best_split(node)
+        m_of_n_test = self.get_best_split(node)
+        best_feat, best_split_point, _ = m_of_n_test[1]
         if best_feat is None:
             node.left = None
             node.right = None
@@ -363,38 +447,25 @@ class Tree:
 
         return node
 
-    def calc_mse(self, data):
-        """
-        Calculate the minimum squared error
-        :param data:
-        :return: minimum squared error value
-        """
-        mean = np.mean(data)
-        return np.mean((data - mean) ** 2)
-
-    def feature_split(self, feature_data):
+    def feature_split(self, feature_data, labels):
         """
         Find the best binary split for the input feature
+        :param labels: array of the output classes related to each input instance
         :param feature_data: training data related to a single independent feature
         :return: the point where the data must be split and its minimum squared error
         """
-        split_points = np.linspace(start=min(feature_data), stop=max(feature_data),
-                                   num=self.tree_params["num_feature_splits"]
-                                   )[1:-1]
-        min_mse = float("inf")
-        mse = float("inf")
+        split_points = self.make_candidate_tests(feature_data, labels)
+        best_gain = 0
         best_split_point = None
 
         for split_point in split_points:
-            data_left = feature_data[feature_data <= split_point]
-            data_right = feature_data[feature_data > split_point]
-            mse = self.calc_mse(data_left) + self.calc_mse(data_right)
+            test_gain = self.binary_info_gain(split_point, feature_data, labels)
 
-            if mse < min_mse:
+            if best_gain < test_gain:
                 best_split_point = split_point
-                min_mse = mse
+                best_gain = test_gain
 
-        return best_split_point, mse
+        return best_split_point, best_gain, split_points
 
     def predict(self, instance, root):
         if self.is_leaf(root):
