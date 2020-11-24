@@ -75,23 +75,22 @@ class Constraint:
 
     def satisfy(self, instance):
         """Given an instance, check whether it satisfies the constraint """
-        ans = True
+        # TODO check this function
+        ans = False
         for rule in self.constraint:
+            test_passed = False
             m = rule['m']
             n = len(rule['n'])
-            test_passed = False
+            features_passed = 0
             counter = 0
             while (not test_passed) and counter < n:
-                feature_no, thresh, greater = rule['n'][counter]
-
-                thresh = float(thresh)
-                if symbol == "<=":
-                    ans &= value <= thresh
-                elif symbol == ">":
-                    ans &= value > thresh
-
-        return ans
-
+                feat_no, thresh, greater = rule['n'][counter]
+                if (greater and instance[feat_no] >= thresh) or ((not greater) and instance[feat_no] < thresh):
+                    features_passed += 1
+                if features_passed >= m:
+                    test_passed = True
+                counter += 1
+            ans = test_passed == rule['passed']
         return ans
 
     def get_constrained_features(self):
