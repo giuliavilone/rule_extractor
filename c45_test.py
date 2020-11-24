@@ -7,7 +7,6 @@ from sklearn.metrics import accuracy_score
 from sklearn.tree import DecisionTreeClassifier, export_text, export_graphviz
 from common_functions import perturbator, create_model, model_train, ensemble_predictions, dataset_uploader
 from common_functions import rule_metrics_calculator
-import sys
 
 # Functions
 def load_all_models(n_models):
@@ -99,7 +98,7 @@ def get_node_depths(tree):
 
 # Main code
 parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
-dataset_par = parameters.iloc[9]
+dataset_par = parameters.iloc[1]
 print('--------------------------------------------------')
 print(dataset_par['dataset'])
 print('--------------------------------------------------')
@@ -157,7 +156,7 @@ string_data = export_graphviz(clf, out_file=None)
 
 # Showing the rules
 print_decision_tree(clf)
-#print(rules)
+print(rules)
 #print(string_data)
 
 predicted_labels = clf.predict(X_test)

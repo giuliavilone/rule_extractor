@@ -21,13 +21,15 @@ def vote_db_modifier(indf):
 
 # Main code
 parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
-dataset_par = parameters.iloc[9]
+dataset_par = parameters.iloc[11]
 print('--------------------------------------------------')
 print(dataset_par['dataset'])
 print('--------------------------------------------------')
 original_study = True
 if original_study:
-    X_train, X_test, y_train, y_test, _, _ = dataset_uploader(dataset_par, train_split=dataset_par['split'])
+    X_train, X_test, y_train, y_test, discrete_list, _ = dataset_uploader(dataset_par, train_split=dataset_par['split'])
+    # Translating the name of the discrete columns into their position number
+    discrete_list = [i for i, v in enumerate(X_train.columns) if v in discrete_list]
     X_train, X_test = X_train.to_numpy(), X_test.to_numpy()
 
     n_cross_val = 2
@@ -40,14 +42,14 @@ if original_study:
     model_train(X_train, to_categorical(y_train, num_classes=dataset_par['classes']),
                 X_test, to_categorical(y_test, num_classes=dataset_par['classes']), model,
                 'trepan_model.h5', n_epochs=dataset_par['epochs'], batch_size=dataset_par['batch_size'])
-
 else:
     X_train, X_test, y_train, y_test, _, _ = dataset_uploader(dataset_par)
     X_train, X_test = X_train.to_numpy(), X_test.to_numpy()
     model = load_model('trained_model_' + dataset_par['dataset'] + '.h5')
     n_class = dataset_par['classes']
 
-oracle = Oracle(model, n_class, X_train)
+
+oracle = Oracle(model, n_class, X_train, discrete_list)
 tree_obj = Tree(oracle)
 
 # build tree with TREPAN
