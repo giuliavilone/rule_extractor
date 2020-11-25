@@ -58,6 +58,8 @@ tree_obj.assign_levels(root, 0)
 
 tree_obj.print_tree_levels(root)
 final_rules = tree_obj.leaf_values(root)
+print(final_rules)
+sys.exit()
 
 # calculate metrics
 num_test_examples = X_test.shape[0]

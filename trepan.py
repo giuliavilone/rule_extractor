@@ -3,7 +3,6 @@
 import numpy as np
 from scipy.stats import gaussian_kde, entropy
 import copy
-import sys
 
 
 class Oracle:
@@ -14,43 +13,42 @@ class Oracle:
         self.y = self.get_oracle_labels(self.X)
         self.disc = discrete_feature
         self.num_features = self.X.shape[-1]
-        self.train_dist = []
-        self.construct_training_distribution()
 
-    def construct_training_distribution(self):
+    def construct_training_distribution(self, data, feature_no):
         """Get the density estimates for each feature using a kernel density estimator.
         Any estimator could be used as described here:
         https://ned.ipac.caltech.edu/level5/March02/Silverman/paper.pdf """
-        for i in range(self.num_features):
-            data = self.X[:, i]
+        if feature_no in self.disc:
+            values, prob = np.unique(data, return_counts=True)
+            prob = prob / sum(prob)
+            sampled_val = np.random.choice(values, 1, p=prob)[0]
+        else:
             try:
-                kernel = gaussian_kde(data, bw_method='silverman')
+                sampled_val = gaussian_kde(data, bw_method='silverman').resample(1)[0]
             except:
-                # If the categorical variables have all the same code (like [0,0,0]) the gaussian_kde goes into
-                # error and it is necessary to add a small noise
                 data = data + 0.001 * np.random.randn(data.shape[0])
-                kernel = gaussian_kde(data, bw_method='silverman')
-            self.train_dist.append(kernel)
+                sampled_val = gaussian_kde(data, bw_method='silverman').resample(1)[0]
+        return sampled_val
 
     def generate_instance(self, constraint):
         """Given the constraints that an instance must satisfy, generate an instance """
-        # TODO Implement proper constraint check
         instance = np.zeros(self.num_features)
-        for feature_no in range(self.num_features):
-            while True:
-                # According to the paper, if the variable is categorical the value must be selected according to
-                # the frequency of the discrete values
-                if feature_no in self.disc:
-                    values, prob = np.unique(self.X[:, feature_no], return_counts=True)
-                    prob = prob / sum(prob)
-                    sampled_val = np.random.choice(values, 1, p=prob)[0]
+        unlimited_feat = [i for i in range(self.num_features) if i not in constraint.get_constrained_features()]
+        for feature_no in unlimited_feat:
+            # According to the paper, if the variable is categorical the value must be selected according to
+            # the frequency of the discrete values
+            instance[feature_no] = self.construct_training_distribution(self.X[:, feature_no], feature_no)
+
+        for rule in constraint.constraint:
+            rule_passed = rule['passed']
+            for counter in range(len(rule['n'])):
+                feat_no, thresh, greater = rule['n'][counter]
+                greater = np.invert(greater) if not rule_passed else greater
+                if greater:
+                    data = self.X[:, feat_no][self.X[:, feat_no] >= thresh]
                 else:
-                    sampled_val = self.train_dist[feature_no].resample(1)[0]
-                if constraint.satisfy(sampled_val):
-                    break
-
-            instance[feature_no] = sampled_val
-
+                    data = self.X[:, feat_no][self.X[:, feat_no] < thresh]
+                instance[feat_no] = self.construct_training_distribution(data, feat_no)
         return instance
 
     def generate_instances(self, constraint, size):
@@ -76,7 +74,8 @@ class Constraint:
     def satisfy(self, instance):
         """Given an instance, check whether it satisfies the constraint """
         # TODO check this function
-        ans = False
+        # Initializing at true in case the constrain list is empty
+        ans = True
         for rule in self.constraint:
             test_passed = False
             m = rule['m']
@@ -324,7 +323,8 @@ class Tree:
         return breakpoints
 
     def get_priority(self, node):
-        reach_n = float(len(node.data)) / self.num_examples
+        reach_n = len([instance for instance in self.initial_data if node.constraints.satisfy(instance)]) / \
+                  self.num_examples
         print(f"reach_n={reach_n}")
         fidelity_n = self.get_fidelity(node)
         print(f"fidelity_n={fidelity_n}")
@@ -333,7 +333,7 @@ class Tree:
         return float(priority)
 
     def get_fidelity(self, node):
-        l2e = 1 - (float(node.misclassified) / self.num_examples)
+        l2e = 1 - (float(node.get_misclassified_count(self.initial_labels)) / self.num_examples)
         return l2e
 
     def build_tree(self):
@@ -410,14 +410,13 @@ class Tree:
                                                split_points_per_feat, node.data, node.labels
                                                )
         else:
-            m_of_n_test = False
+            m_of_n_test = None
         return m_of_n_test
 
     def split(self, node):
         """Decide the best split and split the node. In case it is not possible to determine the best split, the
          node is set as a leaf"""
         m_of_n_test = self.get_best_split(node)
-        print(m_of_n_test)
         if m_of_n_test is None:
             node.left = None
             node.right = None

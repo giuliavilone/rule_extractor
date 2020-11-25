@@ -9,6 +9,7 @@ from common_functions import perturbator, model_train, dataset_uploader, create_
 import sys
 np.random.seed(3)
 
+
 # Functions
 def input_delete(insignificant_index, in_df, in_weight=None):
     """
@@ -28,6 +29,15 @@ def input_delete(insignificant_index, in_df, in_weight=None):
     return out_df, out_weight
 
 
+def prediction_reshape(prediction_list):
+    if len(prediction_list[0]) > 1:
+        ret = np.argmax(prediction_list, axis=1)
+    else:
+        ret = np.reshape(prediction_list, -1).tolist()
+        ret = [round(x) for x in ret]
+    return ret
+
+
 def model_pruned_prediction(insignificant_index, in_df, in_item, in_weight=None):
     """
     Calculate the output classes predicted by the pruned model.
@@ -39,10 +49,10 @@ def model_pruned_prediction(insignificant_index, in_df, in_item, in_weight=None)
     input_x, w = input_delete(insignificant_index, in_df, in_weight=in_weight)
     new_m = create_model(input_x, in_item['classes'], in_item['neurons'], eval(in_item['optimizer']),
                          in_item['init_mode'], in_item['activation'], in_item['dropout_rate'],
-                         eval(in_item['weight_constraint']))
+                         eval(in_item['weight_constraint']), loss='binary_crossentropy', out_activation='sigmoid')
     new_m.set_weights(w)
     ret = new_m.predict(input_x)
-    ret = np.argmax(ret, axis=1)
+    ret = prediction_reshape(ret)
     return ret
 
 
@@ -66,8 +76,7 @@ def network_pruning(w, correct_x, correct_y, test_x, test_y, accuracy, in_item=N
         res = model_pruned_prediction(i, correct_x, in_item, in_weight=w)
         misclassified = [i for i in range(len(correct_y)) if res[i] != correct_y[i]]
         miss_classified_list.append(misclassified)
-        err_length = len(misclassified)
-        error_list.append(err_length)
+        error_list.append(len(misclassified))
     # In case the pruned network correctly predicts all the test inputs, the original network cannot be pruned
     # and its accuracy must be set equal to the accuracy of the original network
     if sum(error_list) > 0:
@@ -89,7 +98,7 @@ def network_pruning(w, correct_x, correct_y, test_x, test_y, accuracy, in_item=N
                 pruning = False
         else:
             pruning = False
-    return miss_classified_list, sorted(insignificant_neurons), new_acc, theta
+    return miss_classified_list, sorted(insignificant_neurons), new_acc, error_list
 
 
 def rule_limits_calculator(c_x, c_y, miss_classified_list, significant_neurons, error, alpha=0.5):
@@ -104,7 +113,8 @@ def rule_limits_calculator(c_x, c_y, miss_classified_list, significant_neurons, 
                                                     'limits': [min(miss_class[:, i][miss_class[:, -1] == k]),
                                                                max(miss_class[:, i][miss_class[:, -1] == k])]}
                                                    for k in np.unique(miss_class[:, -1])
-                                                   if len(miss_class[:, i][miss_class[:, -1] == k]) > (error * alpha)]
+                                                   if len(miss_class[:, i][miss_class[:, -1] == k]) > (error[i] * alpha)
+                                                   ]
     return grouped_miss_class
 
 
@@ -213,10 +223,11 @@ n_classes = dataset_par['classes']
 
 model = create_model(X_train, dataset_par['classes'], dataset_par['neurons'], eval(dataset_par['optimizer']),
                      dataset_par['init_mode'], dataset_par['activation'], dataset_par['dropout_rate'],
-                     weight_constraint=eval(dataset_par['weight_constraint'])
+                     weight_constraint=eval(dataset_par['weight_constraint']), loss='binary_crossentropy',
+                     out_activation='sigmoid'
                      )
-model_train(X_train, to_categorical(y_train, num_classes=n_classes),
-            X_test, to_categorical(y_test, num_classes=n_classes), model, MODEL_NAME,
+model_train(X_train, to_categorical(y_train, num_classes=dataset_par['classes']),
+            X_test, to_categorical(y_test, num_classes=dataset_par['classes']), model, MODEL_NAME,
             n_epochs=dataset_par['epochs'], batch_size=dataset_par['batch_size']
             )
 

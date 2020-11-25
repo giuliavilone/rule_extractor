@@ -6,7 +6,7 @@ from keras.constraints import maxnorm
 import numpy as np
 from scipy.stats import mode
 import pandas as pd
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 from sklearn.utils import resample
 from sklearn.model_selection import train_test_split
 
@@ -72,8 +72,12 @@ def dataset_uploader(item, target_var='class', train_split=0.7):
     out_disc = []
     out_cont = []
     for index, value in col_types.items():
-        if value == 'object':
+        if value in ['object', 'bool']:
             dataset[index] = le.fit_transform(dataset[index].tolist())
+            # encoded_data = np.array(dataset[index]).reshape(len(dataset[index]), 1)
+            # print(dataset[index])
+            # print(encoded_data)
+            # print(OneHotEncoder(sparse=False).fit_transform(encoded_data))
             if index != 'class':
                 out_disc.append(index)
         else:
