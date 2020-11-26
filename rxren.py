@@ -6,6 +6,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score
 import copy
 from common_functions import perturbator, model_train, dataset_uploader, create_model, rule_metrics_calculator
+from rxncn import rule_pruning, rule_elicitation, ruleset_accuracy, rule_size_calculator
 import sys
 np.random.seed(3)
 
@@ -102,8 +103,6 @@ def network_pruning(w, correct_x, correct_y, test_x, test_y, accuracy, in_item=N
 
 
 def rule_limits_calculator(c_x, c_y, miss_classified_list, significant_neurons, error, alpha=0.5):
-    print(significant_neurons)
-    print(miss_classified_list)
     c_tot = np.column_stack((c_x, c_y))
     grouped_miss_class = []
     for i in significant_neurons:
@@ -119,86 +118,39 @@ def rule_limits_calculator(c_x, c_y, miss_classified_list, significant_neurons, 
 
 
 def rule_combiner(rule_set):
-    rule_dict = {'class': [], 'neuron': [], 'limits': [], 'position': []}
+    ret = {}
     for i, r in enumerate(rule_set):
-        if r['class'] not in rule_dict['class']:
-            rule_dict['class'] += [r['class']]
-            rule_dict['neuron'].append([r['neuron']])
-            rule_dict['limits'].append([r['limits']])
-            rule_dict['position'].append([i])
+        if r['class'] not in ret.keys():
+            ret[r['class']] = [{'neuron': r['neuron'], 'limits': r['limits']}]
         else:
-            ix = rule_dict['class'].index(r['class'])
-            rule_dict['neuron'][ix].append(r['neuron'])
-            rule_dict['limits'][ix].append(r['limits'])
-            rule_dict['position'][ix].append(i)
-    return rule_dict
+            ret[r['class']].append({'neuron': r['neuron'], 'limits': r['limits']})
+    return ret
 
 
-def rule_pruning(train_x, train_y, rule_set):
-    """
-    Pruning the rules
-    :param train_x:
-    :param train_y:
-    :param rule_set:
-    :return:
-    """
-    rule_dict = rule_combiner(rule_set)
-    for i, v in enumerate(rule_dict['class']):
-        predicted_y = np.empty(train_y.shape)
-        predicted_y[:] = np.NaN
-        limits = rule_dict['limits'][i]
-        rule_neuron = rule_dict['neuron'][i]
-        position = np.array(rule_dict['position'][i])
-        single_accuracies = []
-        for k, z in enumerate(rule_neuron):
-            predicted_y_single = np.empty(train_y.shape)
-            predicted_y_single[:] = np.NaN
-            minimum = limits[k][0]
-            maximum = limits[k][1]
-            predicted_y[(train_x[:, z] >= minimum) * (train_x[:, z] <= maximum)] = int(v)
-            predicted_y_single[(train_x[:, z] >= minimum) * (train_x[:, z] <= maximum)] = int(v)
-            # It is necessary to remove the nan values otherwise it is not possible to calculate accuracy
-            predicted_y_single[np.isnan(predicted_y_single)] = n_classes + 10
-            single_accuracies += [accuracy_score(predicted_y_single, train_y)]
-        predicted_y[np.isnan(predicted_y)] = n_classes + 10
-        overall_accuracy = accuracy_score(predicted_y, train_y)
-        ixs = position[np.array(single_accuracies >= overall_accuracy, dtype=bool)]
-        for ix_index in ixs:
-            rule_set.pop(ix_index)
-    return rule_set
-
-
-def rule_evaluator(x, y, rule_list, class_list):
-    predicted_y = np.empty(y.shape)
+def rule_evaluator(x, y, rule_d, orig_acc, class_list):
+    ret_rules = copy.deepcopy(rule_d)
+    rule_accuracy = copy.deepcopy(orig_acc)
+    predicted_y = np.empty(x.shape[0])
     predicted_y[:] = np.NaN
-    class_list = class_list.tolist()
-    for r in rule_list:
-        if r['class'] in class_list and len(class_list) > 0:
-            class_list.remove(r['class'])
-        col = r['neuron']
-        minimum = r['limits'][0]
-        maximum = r['limits'][1]
-        predicted_y[(x[:, col] >= minimum) * (x[:, col] <= maximum)] = int(r['class'])
-    if len(class_list) == 1:
-        predicted_y[np.isnan(predicted_y)] = class_list[0]
-    elif len(class_list) == 0:
-        # Just in case the rules do not cover the entire dataset
-        predicted_y[np.isnan(predicted_y)] = n_classes + 10
-    else:
-        # In case the rules do not consider more than 1 output class, the algorithm assigns as default one the
-        # most frequent class not considered by the rules
-        new_y = [i for i in y if i not in class_list]
-        predicted_y[np.isnan(predicted_y)] = max(set(new_y), key=new_y.count)
-        print("It is not possible to identify default class")
-    rule_accuracy = accuracy_score(predicted_y, y)
+    for cls, rule_list in rule_dict.items():
+        predicted_y = rule_elicitation(x, predicted_y, rule_list, cls)
+    predicted_y[np.isnan(predicted_y)] = len(class_list) + 10
     # Calculate min and max of mismatched instances
     mismatched = [index for index, elem in enumerate(y) if elem != predicted_y[index]]
-    ret_rules = []
-    for r in rule_list:
-        col = r['neuron']
-        mismatched_values = x[mismatched, col]
-        r['new_limits'] = [min(mismatched_values), max(mismatched_values)]
-        ret_rules.append(r)
+    for cls, rule_list in rule_dict.items():
+        print('Working on class: ', cls)
+        ixs = np.where(predicted_y == cls)[0].tolist()
+        ixs = [ix for ix in ixs if ix in mismatched]
+        for pos in range(len(rule_list)):
+            item = rule_list[pos]
+            new_min = min(x[ixs, item['neuron']])
+            new_max = max(x[ixs, item['neuron']])
+            ret_rules[cls][pos] = {'neuron': item['neuron'], 'limits': [new_min, new_max]}
+            new_acc = ruleset_accuracy(x, y, ret_rules[cls], cls, len(np.unique(y)))
+            if new_acc < rule_accuracy[cls]:
+                ret_rules[cls][pos] = rule_dict[cls][pos]
+            else:
+                rule_accuracy[cls] = new_acc
     return rule_accuracy, ret_rules
 
 
@@ -245,8 +197,8 @@ test_pred = np.argmax(model.predict(X_test), axis=1)
 test_acc = accuracy_score(test_pred, y_test)
 print("Accuracy of original model on the test dataset: ", test_acc)
 
-miss_list, ins_index, new_accuracy, err = network_pruning(weights, correctX, correcty, X_test, y_test, test_acc,
-                                                          dataset_par
+miss_list, ins_index, new_accuracy, err = network_pruning(weights, correctX, correcty, X_test, y_test,
+                                                          test_acc, dataset_par
                                                           )
 
 significant_index = [i for i in range(weights[0].shape[0]) if i not in ins_index]
@@ -255,41 +207,42 @@ print("Accuracy of pruned network", new_accuracy)
 rule_limits = rule_limits_calculator(correctX, correcty, miss_list, significant_index, err, alpha=0.5)
 
 if len(rule_limits) > 1:
-    rule_limits = rule_pruning(X_train, y_train, rule_limits)
+    rule_dict = rule_combiner(rule_limits)
+    rule_limits, rule_acc = rule_pruning(X_test, y_test, rule_dict, n_classes)
+else:
+    rule_limits = rule_combiner(rule_limits)
+    rule_acc = {}
+    for out_class, rule_list in rule_limits.items():
+        rule_acc[out_class] = ruleset_accuracy(X_test, y_test, rule_list, out_class, len(np.unique(y)))
 
 rule_simplifier = True
-old_rule_acc = new_accuracy
-final_rules = []
 while rule_simplifier:
-    rule_acc, final_rules = rule_evaluator(X_test, y_test, rule_limits, np.unique(y))
-    if rule_acc > old_rule_acc:
-        old_rule_acc = rule_acc
+    new_rule_acc, final_rules = rule_evaluator(X_test, y_test, rule_limits, rule_acc, np.unique(y))
+    if sum(new_rule_acc.values()) > sum(rule_acc.values()):
+        rule_acc = new_rule_acc
     else:
         rule_simplifier = False
-    final_rules[0]['limits'] = final_rules[0].pop('new_limits')
 
 print(final_rules)
-predicted_labels = np.argmax(model.predict(X_test), axis=1)
 
+predicted_labels = model.predict(X_test)
+predicted_labels = np.argmax(predicted_labels, axis=1)
 num_test_examples = X_test.shape[0]
 perturbed_data = perturbator(X_test)
 rule_labels = np.empty(num_test_examples)
 rule_labels[:] = np.nan
 perturbed_labels = np.empty(num_test_examples)
 perturbed_labels[:] = np.nan
-for rule in final_rules:
-    neuron = X_test[:, rule['neuron']]
-    indexes = np.where((neuron >= rule['limits'][0]) & (neuron <= rule['limits'][1]))
-    rule_labels[indexes] = rule['class']
-    p_neuron = perturbed_data[:, rule['neuron']]
-    p_indexes = np.where((p_neuron >= rule['limits'][0]) & (p_neuron <= rule['limits'][1]))
-    perturbed_labels[p_indexes] = rule['class']
+for key, rule in final_rules.items():
+    rule_labels = rule_elicitation(X_test, rule_labels, rule, key)
+    perturbed_labels = rule_elicitation(perturbed_data, perturbed_labels, rule, key)
+
 
 perturbed_labels[np.where(np.isnan(perturbed_labels))] = n_classes + 10
 
 completeness = sum(~np.isnan(rule_labels)) / num_test_examples
-combined_rules = rule_combiner(final_rules)
-avg_length = sum([len(item) for item in combined_rules['neuron']]) / len(combined_rules['class'])
 
-rule_metrics_calculator(num_test_examples, y_test, rule_labels, predicted_labels, perturbed_labels, len(final_rules),
+avg_length, number_rules = rule_size_calculator(final_rules)
+
+rule_metrics_calculator(num_test_examples, y_test, rule_labels, predicted_labels, perturbed_labels, number_rules,
                         completeness, avg_length)

@@ -10,6 +10,7 @@ from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 from sklearn.utils import resample
 from sklearn.model_selection import train_test_split
 
+
 def create_model_old(train_x, num_classes, hidden_nodes):
     model = Sequential()
     model.add(Dense(hidden_nodes, input_dim=train_x.shape[1], activation="sigmoid"))

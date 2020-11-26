@@ -16,7 +16,7 @@ np.random.seed(1)
 
 # Functions
 def prediction_reshape(prediction_list):
-    if len(prediction_list[0]) > 1:
+    if len(prediction_list.shape) > 1:
         ret = np.argmax(prediction_list, axis=1)
     else:
         ret = np.reshape(prediction_list, -1).tolist()
@@ -212,6 +212,7 @@ def rule_evaluator(x, y, rule_dict, orig_acc, in_item, in_weight):
         print('Working on class: ', cls)
         for pos in range(len(rule_list)):
             item = rule_list[pos]
+            # TODO This is wrong! The predicted y must be calculated with the rule
             predicted_y = model_pruned_prediction([item['neuron']], x, in_item, in_weight=in_weight)
             ixs = np.where(predicted_y == cls)[0].tolist()
             new_min = min(x[ixs, item['neuron']])
@@ -256,10 +257,10 @@ n_classes = dataset_par['classes']
 
 model = create_model(X_train, dataset_par['classes'], dataset_par['neurons'], eval(dataset_par['optimizer']),
                      dataset_par['init_mode'], dataset_par['activation'], dataset_par['dropout_rate'],
-                     weight_constraint=eval(dataset_par['weight_constraint']), loss='binary_crossentropy',
-                     out_activation='sigmoid'
+                     weight_constraint=eval(dataset_par['weight_constraint'])
                      )
-model_train(X_train, y_train, X_test, y_test, model, MODEL_NAME,
+model_train(X_train, to_categorical(y_train, num_classes=dataset_par['classes']),
+            X_test, to_categorical(y_test, num_classes=dataset_par['classes']), model, MODEL_NAME,
             n_epochs=dataset_par['epochs'], batch_size=dataset_par['batch_size']
             )
 
@@ -294,8 +295,9 @@ X_val, _ = input_delete(insignificant_neurons, X_val)
 
 if len(rule_limits) > 1:
     rule_limits, rule_accuracy = rule_pruning(X_train, y_train, rule_limits, n_classes)
+print(rule_limits)
+print(rule_accuracy)
 
-rule_simplifier = True
 
 final_rules = rule_evaluator(X_val, y_val, rule_limits, rule_accuracy, dataset_par, in_weight=pruned_w)
 
@@ -307,7 +309,7 @@ rule_labels[:] = np.nan
 perturbed_labels = np.empty(num_test_examples)
 perturbed_labels[:] = np.nan
 for key, rule in final_rules.items():
-    rule_labels = rule_elicitation(X_test, perturbed_labels, rule, key)
+    rule_labels = rule_elicitation(X_test, rule_labels, rule, key)
     perturbed_labels = rule_elicitation(perturbed_data, perturbed_labels, rule, key)
 
 perturbed_labels[np.where(np.isnan(perturbed_labels))] = n_classes + 10
