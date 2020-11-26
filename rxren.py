@@ -7,7 +7,6 @@ from sklearn.metrics import accuracy_score
 import copy
 from common_functions import perturbator, model_train, dataset_uploader, create_model, rule_metrics_calculator
 from rxncn import rule_pruning, rule_elicitation, ruleset_accuracy, rule_size_calculator
-import sys
 np.random.seed(3)
 
 

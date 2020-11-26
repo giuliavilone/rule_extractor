@@ -206,21 +206,25 @@ def rule_pruning(train_x, train_y, rule_set, classes_n):
     return ret, orig_acc
 
 
-def rule_evaluator(x, y, rule_dict, orig_acc, in_item, in_weight):
+def rule_evaluator(x, y, rule_dict, orig_acc, class_list):
     ret = copy.deepcopy(rule_dict)
+    predicted_y = np.empty(x.shape[0])
+    predicted_y[:] = np.NaN
+    for cls, rule_list in rule_dict.items():
+        predicted_y = rule_elicitation(x, predicted_y, rule_list, cls)
+    predicted_y[np.isnan(predicted_y)] = len(class_list) + 10
     for cls, rule_list in rule_dict.items():
         print('Working on class: ', cls)
-        for pos in range(len(rule_list)):
-            item = rule_list[pos]
-            # TODO This is wrong! The predicted y must be calculated with the rule
-            predicted_y = model_pruned_prediction([item['neuron']], x, in_item, in_weight=in_weight)
-            ixs = np.where(predicted_y == cls)[0].tolist()
-            new_min = min(x[ixs, item['neuron']])
-            new_max = max(x[ixs, item['neuron']])
-            ret[cls][pos] = {'neuron': item['neuron'], 'limits': [new_min, new_max]}
-            new_acc = ruleset_accuracy(x, y, ret[cls], cls, len(np.unique(y)))
-            if new_acc < orig_acc[cls]:
-                ret[cls][pos] = rule_dict[cls][pos]
+        ixs = np.where(predicted_y == cls)[0].tolist()
+        if len(ixs) > 0:
+            for pos in range(len(rule_list)):
+                item = rule_list[pos]
+                new_min = min(x[ixs, item['neuron']])
+                new_max = max(x[ixs, item['neuron']])
+                ret[cls][pos] = {'neuron': item['neuron'], 'limits': [new_min, new_max]}
+                new_acc = ruleset_accuracy(x, y, ret[cls], cls, len(np.unique(y)))
+                if new_acc < orig_acc[cls]:
+                    ret[cls][pos] = rule_dict[cls][pos]
     return ret
 
 
@@ -299,9 +303,11 @@ print(rule_limits)
 print(rule_accuracy)
 
 
-final_rules = rule_evaluator(X_val, y_val, rule_limits, rule_accuracy, dataset_par, in_weight=pruned_w)
+final_rules = rule_evaluator(X_val, y_val, rule_limits, rule_accuracy, np.unique(y))
 
-predicted_labels = model_pruned_prediction([], X_test, dataset_par, in_weight=pruned_w)
+predicted_labels = model.predict(X_test)
+print(predicted_labels)
+sys.exit()
 num_test_examples = X_test.shape[0]
 perturbed_data = perturbator(X_test)
 rule_labels = np.empty(num_test_examples)
