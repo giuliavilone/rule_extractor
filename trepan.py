@@ -1,7 +1,7 @@
 # From https://github.com/nakumgaurav/XAI-TREPAN-for-Regression/blob/master/descision_tree.py
 # and from https://github.com/KesterJ/TREPAN/blob/master/TREPAN-skeleton.py
 import numpy as np
-from scipy.stats import gaussian_kde, entropy
+from scipy.stats import gaussian_kde, entropy, mode
 import copy
 
 
@@ -26,8 +26,9 @@ class Oracle:
             try:
                 sampled_val = gaussian_kde(data, bw_method='silverman').resample(1)[0]
             except:
-                data = data + 0.001 * np.random.randn(data.shape[0])
-                sampled_val = gaussian_kde(data, bw_method='silverman').resample(1)[0]
+                values, prob = np.unique(data, return_counts=True)
+                prob = prob / sum(prob)
+                sampled_val = np.random.choice(values, 1, p=prob)[0]
         return sampled_val
 
     def generate_instance(self, constraint):
@@ -102,13 +103,15 @@ class Constraint:
 
 
 class Node:
-    def __init__(self, data, labels, constraints):
+    def __init__(self, data, labels, constraints, parent, name):
         self.data = data
         self.labels = labels
         self.constraints = constraints
         self.num_features = data.shape[1]
         self.left = None
         self.right = None
+        self.parent = parent
+        self.name = name
         self.dominant = self.get_dominant_class(labels)
         self.misclassified = self.get_misclassified_count(labels)
         # This is to rule out features that have been already used to generate splits to reach this node
@@ -117,20 +120,10 @@ class Node:
     @staticmethod
     def get_dominant_class(labels):
         """
-        This function returns the "dominant" class of this node, i.e., the class with the highest count of the examples
-        in this node.
+        This function returns the "dominant" class of this node which corresponds to the mode,
+        the class with the highest count of the examples in this node.
         """
-        class_counts = {}
-        # get count for all labels
-        for label in labels:
-            if label not in class_counts:
-                # insert in counter
-                class_counts[label] = 0
-            class_counts[label] += 1
-
-        # get the class with the max count
-        max_class = max(class_counts, key=class_counts.get)
-        return max_class
+        return mode(labels).mode[0]
 
     def get_misclassified_count(self, labels):
         """
@@ -157,14 +150,14 @@ class Tree:
         self.tree_params = {"tree_size": 15, "split_min": 1000, "num_feature_splits": 15, 'test_improvement': 1.1}
         self.num_nodes = 0
         self.max_levels = 0
-        self.root = self.construct_node(self.initial_data, self.initial_labels, Constraint())
+        self.root = self.construct_node(self.initial_data, self.initial_labels, Constraint(), '', 'root')
 
     @staticmethod
-    def construct_node(data, labels, constraints):
+    def construct_node(data, labels, constraints, parent, name):
         """ Input Args - data: the training data that this node has
             Output Args - A Node variable
         """
-        return Node(data, labels, constraints)
+        return Node(data, labels, constraints, parent, name)
 
     @staticmethod
     def is_leaf(node) -> object:
@@ -432,8 +425,10 @@ class Tree:
             left_constraints.add_rule(left_rule)
             right_constraints.add_rule(right_rule)
 
-            node.left = self.construct_node(node.data[left_ind], node.labels[left_ind], left_constraints)
-            node.right = self.construct_node(node.data[right_ind], node.labels[right_ind], right_constraints)
+            node.left = self.construct_node(node.data[left_ind], node.labels[left_ind], left_constraints, node.name,
+                                            node.name + '_left')
+            node.right = self.construct_node(node.data[right_ind], node.labels[right_ind], right_constraints, node.name,
+                                             node.name + '_right')
             node.split_rule = {'m': m_of_n_test[0], 'n': m_of_n_test[1], 'passed': True}
 
         return node
@@ -493,6 +488,21 @@ class Tree:
                 self.print_tree(root.left, level)
             if root.right is not None:
                 self.print_tree(root.right, level)
+
+    def print_tree_rule(self, root):
+        print('Node parent:', root.parent)
+        print('Node name:', root.name)
+        print('Node dominant: ', root.dominant)
+        for constraint in root.constraints.constraint:
+            print('Node rule: ', constraint)
+        if self.is_leaf(root):
+            print('Node level: ', root.level)
+            # print('Node split rule: ', root.split_rule)
+        else:
+            if root.left is not None:
+                self.print_tree_rule(root.left)
+            if root.right is not None:
+                self.print_tree_rule(root.right)
 
     def leaf_values(self, root, ret_list=None):
         if ret_list is None:

@@ -59,6 +59,7 @@ tree_obj.assign_levels(root, 0)
 tree_obj.print_tree_levels(root)
 final_rules = tree_obj.leaf_values(root)
 print(final_rules)
+tree_obj.print_tree_rule(root)
 sys.exit()
 
 # calculate metrics

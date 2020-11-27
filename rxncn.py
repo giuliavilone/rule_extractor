@@ -272,17 +272,20 @@ model_train(X_train, to_categorical(y_train, num_classes=dataset_par['classes'])
 weights = np.array(model.get_weights())
 results = prediction_reshape(model.predict_classes(X_train))
 
+# This will be used for calculating the final metrics
+predicted_labels = prediction_reshape(model.predict(X_test))
+
 correctX = X_train[[results[i] == y_train[i] for i in range(len(y_train))]]
 print('Number of correctly classified examples', correctX.shape)
 correcty = y_train[[results[i] == y_train[i] for i in range(len(y_train))]]
 acc = accuracy_score(results, y_train)
 print("Accuracy of original model on the train dataset: ", acc)
-test_pred = prediction_reshape(model.predict(X_test))
-test_acc = accuracy_score(test_pred, y_test)
-print("Accuracy of original model on the test dataset: ", test_acc)
+test_pred = prediction_reshape(model.predict(X_val))
+test_acc = accuracy_score(test_pred, y_val)
+print("Accuracy of original model on the validation dataset: ", test_acc)
 
-miss_dict, pruned_x, pruned_w, new_accuracy, err, sig_cols = network_pruning(weights, correctX, correcty, X_test,
-                                                                             y_test, test_acc, column_lst,
+miss_dict, pruned_x, pruned_w, new_accuracy, err, sig_cols = network_pruning(weights, correctX, correcty, X_val,
+                                                                             y_val, test_acc, column_lst,
                                                                              in_item=dataset_par)
 
 print("Accuracy of pruned network", new_accuracy)
@@ -302,12 +305,8 @@ if len(rule_limits) > 1:
 print(rule_limits)
 print(rule_accuracy)
 
-
 final_rules = rule_evaluator(X_val, y_val, rule_limits, rule_accuracy, np.unique(y))
 
-predicted_labels = model.predict(X_test)
-print(predicted_labels)
-sys.exit()
 num_test_examples = X_test.shape[0]
 perturbed_data = perturbator(X_test)
 rule_labels = np.empty(num_test_examples)

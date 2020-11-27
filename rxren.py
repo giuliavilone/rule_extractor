@@ -41,9 +41,10 @@ def prediction_reshape(prediction_list):
 def model_pruned_prediction(insignificant_index, in_df, in_item, in_weight=None):
     """
     Calculate the output classes predicted by the pruned model.
-    :param input_x: model's weights
-    :param w: theta
-    :param in_item: correctX
+    :param insignificant_index: list of the insignificant input features
+    :param in_df: input instances to be classified by the model
+    :param in_item: list of model's hyper-parameters
+    :param in_weight: model's weights
     :return: numpy array with the output classes predicted by the pruned model
     """
     input_x, w = input_delete(insignificant_index, in_df, in_weight=in_weight)
