@@ -56,11 +56,10 @@ tree_obj = Tree(oracle)
 root = tree_obj.build_tree()
 tree_obj.assign_levels(root, 0)
 
-tree_obj.print_tree_levels(root)
+# tree_obj.print_tree_levels(root)
 final_rules = tree_obj.leaf_values(root)
-print(final_rules)
-tree_obj.print_tree_rule(root)
-sys.exit()
+# print(final_rules)
+# tree_obj.print_tree_rule(root)
 
 # calculate metrics
 num_test_examples = X_test.shape[0]

@@ -490,9 +490,11 @@ class Tree:
                 self.print_tree(root.right, level)
 
     def print_tree_rule(self, root):
+        print('-------------------------------------------------------------------------------------------')
         print('Node parent:', root.parent)
         print('Node name:', root.name)
         print('Node dominant: ', root.dominant)
+        print('Is node a leaf? ', self.is_leaf(root))
         for constraint in root.constraints.constraint:
             print('Node rule: ', constraint)
         if self.is_leaf(root):
@@ -505,6 +507,13 @@ class Tree:
                 self.print_tree_rule(root.right)
 
     def leaf_values(self, root, ret_list=None):
+        """
+        This function return the the number of nodes between each leaf and the root. This should correspond
+        to the number of antecedents of each rule. Or should I count the number of m or n conditions?
+        :param root: root node of the tree
+        :param ret_list: list of the number of nodes between each leaf and the root node
+        :return: ret_list updated with the paths to all the leaves
+        """
         if ret_list is None:
             ret_list = []
         if self.is_leaf(root):
