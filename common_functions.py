@@ -7,8 +7,10 @@ import numpy as np
 from scipy.stats import mode
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+from sklearn.model_selection import StratifiedKFold
 from sklearn.utils import resample
 from sklearn.model_selection import train_test_split
+from imblearn.over_sampling import SMOTE
 
 
 def create_model_old(train_x, num_classes, hidden_nodes):
@@ -65,7 +67,7 @@ def ensemble_predictions(members, testX):
     return results
 
 
-def dataset_uploader(item, target_var='class', train_split=0.7):
+def dataset_uploader(item, target_var='class', train_split=0.7, cross_split=5):
     le = LabelEncoder()
     dataset = pd.read_csv('datasets-UCI/Used_data/' + item['dataset'] + '.csv')
     dataset = dataset.dropna().reset_index(drop=True)
@@ -92,6 +94,12 @@ def dataset_uploader(item, target_var='class', train_split=0.7):
     # val_index = [x for x in ix if x not in train_index]
     # X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
     # y_train, y_test = y[train_index], y[val_index]
+    # TODO complete the SMOTE oversampling
+    cv = StratifiedKFold(n_splits=cross_split)
+    for train_idx, test_idx, in cv.split(X, y):
+        X_train, y_train = X[train_idx], y[train_idx]
+        X_test, y_test = X[test_idx], y[test_idx]
+        X_train, y_train = SMOTE().fit_sample(X_train, y_train)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=(1-train_split))
     return X_train, X_test, y_train, y_test, out_disc, out_cont
 
