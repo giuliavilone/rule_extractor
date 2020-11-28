@@ -6,10 +6,8 @@ from keras.constraints import maxnorm
 import numpy as np
 from scipy.stats import mode
 import pandas as pd
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import StratifiedKFold
-from sklearn.utils import resample
-from sklearn.model_selection import train_test_split
 from imblearn.over_sampling import SMOTE
 
 
@@ -76,32 +74,27 @@ def dataset_uploader(item, target_var='class', train_split=0.7, cross_split=5):
     out_cont = []
     for index, value in col_types.items():
         if value in ['object', 'bool']:
-            dataset[index] = le.fit_transform(dataset[index].tolist())
-            # encoded_data = np.array(dataset[index]).reshape(len(dataset[index]), 1)
-            # print(dataset[index])
-            # print(encoded_data)
-            # print(OneHotEncoder(sparse=False).fit_transform(encoded_data))
             if index != 'class':
+                dataset = pd.get_dummies(dataset, columns=[index])
                 out_disc.append(index)
         else:
             if index != 'class':
                 out_cont.append(index)
     # Separating independent variables from the target one
-    X = dataset.drop(columns=[target_var])
     y = le.fit_transform(dataset[target_var].tolist())
-    # ix = [i for i in range(len(X))]
-    # train_index = resample(ix, replace=False, n_samples=int(len(X) * train_split))
-    # val_index = [x for x in ix if x not in train_index]
-    # X_train, X_test = X[X.index.isin(train_index)], X[X.index.isin(val_index)]
-    # y_train, y_test = y[train_index], y[val_index]
-    # TODO complete the SMOTE oversampling
+    X = dataset.drop(columns=[target_var])
+    # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=(1 - train_split))
+    X_train_list, X_test_list, y_train_list, y_test_list = [], [], [], []
     cv = StratifiedKFold(n_splits=cross_split)
     for train_idx, test_idx, in cv.split(X, y):
-        X_train, y_train = X[train_idx], y[train_idx]
-        X_test, y_test = X[test_idx], y[test_idx]
+        X_train, y_train = X[X.index.isin(train_idx)], y[train_idx]
         X_train, y_train = SMOTE().fit_sample(X_train, y_train)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=(1-train_split))
-    return X_train, X_test, y_train, y_test, out_disc, out_cont
+        X_test, y_test = X[X.index.isin(test_idx)], y[test_idx]
+        X_train_list.append(X_train)
+        X_test_list.append(X_test)
+        y_train_list.append(y_train)
+        y_test_list.append(y_test)
+    return X_train_list, X_test_list, y_train_list, y_test_list, out_disc, out_cont
 
 
 def rule_metrics_calculator(num_examples, y_test, rule_labels, model_labels, perturbed_labels, rule_n,
