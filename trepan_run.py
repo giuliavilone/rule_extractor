@@ -7,18 +7,6 @@ from trepan import Tree, Oracle
 from keras.models import load_model
 import sys
 
-
-def vote_db_modifier(indf):
-    """
-    Modify the vote database by replacing yes/no answers with boolean
-    :type indf: Pandas dataframe
-    """
-    indf.replace(b'y', 1, inplace=True)
-    indf.replace(b'n', 0, inplace=True)
-    indf.replace(b'?', 0, inplace=True)
-    return indf
-
-
 # Main code
 parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
 dataset_par = parameters.iloc[11]

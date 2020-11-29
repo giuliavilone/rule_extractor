@@ -11,6 +11,17 @@ from sklearn.model_selection import StratifiedKFold
 from imblearn.over_sampling import SMOTE
 
 
+def vote_db_modifier(indf):
+    """
+    Modify the vote database by replacing yes/no answers with boolean
+    :type indf: Pandas dataframe
+    """
+    indf.replace(b'y', 1, inplace=True)
+    indf.replace(b'n', 0, inplace=True)
+    indf.replace(b'?', 0, inplace=True)
+    return indf
+
+
 def create_model_old(train_x, num_classes, hidden_nodes):
     model = Sequential()
     model.add(Dense(hidden_nodes, input_dim=train_x.shape[1], activation="sigmoid"))
