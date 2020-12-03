@@ -15,14 +15,13 @@ print(dataset_par['dataset'])
 print('--------------------------------------------------')
 original_study = True
 if original_study:
-    X_train, X_test, y_train, y_test, discrete_list, _ = dataset_uploader(dataset_par, train_split=dataset_par['split'])
-    # Translating the name of the discrete columns into their position number
-    discrete_list = [i for i, v in enumerate(X_train.columns) if v in discrete_list]
+    X_train, X_test, y_train, y_test, discrete_list, _ = dataset_uploader(dataset_par)
+    X_train = X_train[0]
+    X_test = X_test[0]
+    y_train = y_train[0]
+    y_test = y_test[0]
     X_train, X_test = X_train.to_numpy(), X_test.to_numpy()
-
-    n_cross_val = 2
     n_class = 2
-    n_nodes = 3
     model = create_model(X_train, dataset_par['classes'], dataset_par['neurons'], eval(dataset_par['optimizer']),
                          dataset_par['init_mode'], dataset_par['activation'], dataset_par['dropout_rate'],
                          weight_constraint=eval(dataset_par['weight_constraint'])
@@ -31,8 +30,8 @@ if original_study:
                 X_test, to_categorical(y_test, num_classes=dataset_par['classes']), model,
                 'trepan_model.h5', n_epochs=dataset_par['epochs'], batch_size=dataset_par['batch_size'])
 else:
-    X_train, X_test, y_train, y_test, _, _ = dataset_uploader(dataset_par)
-    X_train, X_test = X_train.to_numpy(), X_test.to_numpy()
+    X_train, X_test, y_train, y_test, discrete_list, _ = dataset_uploader(dataset_par)
+    # X_train, X_test = X_train.to_numpy(), X_test.to_numpy()
     model = load_model('trained_model_' + dataset_par['dataset'] + '.h5')
     n_class = dataset_par['classes']
 
@@ -47,7 +46,8 @@ tree_obj.assign_levels(root, 0)
 # tree_obj.print_tree_levels(root)
 final_rules = tree_obj.leaf_values(root)
 # print(final_rules)
-# tree_obj.print_tree_rule(root)
+tree_obj.print_tree_rule(root)
+sys.exit()
 
 # calculate metrics
 num_test_examples = X_test.shape[0]

@@ -1,7 +1,6 @@
 from keras.callbacks import ModelCheckpoint
 from keras.models import Sequential
-from keras.layers import Dense
-from keras.layers import Dropout
+from keras.layers import Dense, Dropout
 from keras.constraints import maxnorm
 import numpy as np
 from scipy.stats import mode
@@ -76,21 +75,23 @@ def ensemble_predictions(members, testX):
     return results
 
 
-def dataset_uploader(item, target_var='class', train_split=0.7, cross_split=5):
+def dataset_uploader(item, target_var='class', cross_split=5):
     le = LabelEncoder()
     dataset = pd.read_csv('datasets-UCI/Used_data/' + item['dataset'] + '.csv')
     dataset = dataset.dropna().reset_index(drop=True)
     col_types = dataset.dtypes
-    out_disc = []
-    out_cont = []
+    out_disc_temp = []
     for index, value in col_types.items():
         if value in ['object', 'bool']:
             if index != 'class':
                 dataset = pd.get_dummies(dataset, columns=[index])
-                out_disc.append(index)
-        else:
-            if index != 'class':
-                out_cont.append(index)
+                out_disc_temp.append(index)
+    # The number of the discrete features must take into account the new dummy columns
+    out_disc = []
+    for col in out_disc_temp:
+        out_disc += [i for i, v in enumerate(dataset.columns) if v.find(col + '_') > -1]
+    out_cont = [i for i, v in enumerate(dataset.columns) if i not in out_disc]
+
     # Separating independent variables from the target one
     y = le.fit_transform(dataset[target_var].tolist())
     X = dataset.drop(columns=[target_var])

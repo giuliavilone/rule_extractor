@@ -68,26 +68,53 @@ def find_best_combination(in_df, y, corr_features):
     return ret
 
 
+def data_importer(file_to_be_imported, file_name, remove_columns=True):
+    le = LabelEncoder()
+    feat_to_be_deleted = {'bank': ['euribor3m', 'emp.var.rate'],
+                          'cover type': ['Wilderness_Area1', 'Aspect', 'Hillshade_9am', 'Hor_Dist_Hydrology'],
+                          'letter recognition': ['y-box', 'high', 'width'],
+                          'online shoppers intention': ['BounceRates', 'ProductRelated', 'Inform_Duration'],
+                          'avila': ['F10'],
+                          'credit card default': ['BILL_AMT6', 'BILL_AMT5', 'BILL_AMT4', 'BILL_AMT3', 'BILL_AMT2',
+                                                  'PAY_6', 'PAY_5', 'PAY_4', 'PAY_3', 'PAY_2'],
+                          'eeg eye states': ['P7', 'F8', 'T8', 'P8', 'FC5'],
+                          'skin nonskin': ['B']
+                          }
+
+    ret_df = pd.read_csv(file_to_be_imported)
+    ret_class = le.fit_transform(ret_df['class'].tolist())
+    ret_df = ret_df.drop(columns=['class'])
+    if remove_columns:
+        if file_name in feat_to_be_deleted.keys():
+            columns_to_be_deleted = [item for item in ret_df.columns.tolist() if item in feat_to_be_deleted[file_name]]
+            ret_df = ret_df.drop(columns=columns_to_be_deleted)
+    col_types = ret_df.dtypes
+    for index, value in col_types.items():
+        if value in ['object', 'bool']:
+            if index != 'class':
+                ret_df[index] = le.fit_transform(ret_df[index].tolist())
+    return ret_df, ret_class
+
+
 path = "/home/d18126441/PycharmProjects/rule_extractor/datasets-UCI/new_datasets/*.csv"
-feat_to_be_deleted = ['euribor3m', 'emp.var.rate', 'Wilderness_Area1', 'Aspect', 'Hillshade_9am', 'Hor_Dist_Hydrology',
-                      'y-box', 'high', 'width', 'BounceRates', 'ProductRelated', 'Inform_Duration']
+
 plot_matrix = True
 best_combination = False
-le = LabelEncoder()
 for filename in glob.glob(path):
-    df = pd.read_csv(filename)
-    out_class = le.fit_transform(df['class'].tolist())
-    df = df.drop(columns=['class'])
-    columns_to_be_deleted = [item for item in df.columns.tolist() if item in feat_to_be_deleted]
-    df = df.drop(columns=columns_to_be_deleted)
     dataset_name = filename[73:-4].replace("_", " ")
     print(dataset_name)
+    df, out_class = data_importer(filename, dataset_name)
+    if dataset_name == 'bitcoin heist data':
+        df = df.drop(columns=['address'])
+
     corr_matrix = df.corr().round(4)
-    if dataset_name == 'cover type':
+    if dataset_name in ('cover type', 'connect-4'):
         # The cover type dataset has too many variables to be plotted in a single matrix. So here the function
         # removes those that are weakly correlated with all the others and plots only those with
         # some correlation values that are greater than 0.5
         corr_matrix = feature_selector(corr_matrix)
+    elif dataset_name in ('diabetic data'):
+        corr_matrix = feature_selector(corr_matrix, threshold=0.3)
     if plot_matrix:
         correlation_matrix_plot(corr_matrix)
     # Finding the best combination among the correlated variables
