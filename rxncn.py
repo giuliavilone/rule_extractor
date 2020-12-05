@@ -249,7 +249,7 @@ print(dataset_par['dataset'])
 print('--------------------------------------------------')
 
 MODEL_NAME = 'trained_model_' + dataset_par['dataset'] + '.h5'
-X_train, X_test, y_train, y_test, _, _ = dataset_uploader(dataset_par, train_split=dataset_par['split'])
+X_train, X_test, y_train, y_test, _, _ = dataset_uploader(dataset_par)
 X_test, X_val, y_test, y_val = train_test_split(X_test, y_test, test_size=0.33)
 
 column_lst = X_train.columns.tolist()

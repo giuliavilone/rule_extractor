@@ -83,7 +83,7 @@ def dataset_uploader(item, target_var='class', cross_split=5):
     out_disc_temp = []
     for index, value in col_types.items():
         if value in ['object', 'bool']:
-            if index != 'class':
+            if index != target_var:
                 dataset = pd.get_dummies(dataset, columns=[index])
                 out_disc_temp.append(index)
     # The number of the discrete features must take into account the new dummy columns

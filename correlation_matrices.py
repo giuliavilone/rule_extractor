@@ -7,6 +7,7 @@ from sklearn import linear_model
 from sklearn.metrics import mean_squared_error
 import itertools
 from sklearn.preprocessing import LabelEncoder
+import sys
 
 
 def correlation_matrix_plot(in_corr_matrix, save_corr_matrix=False):
@@ -78,7 +79,10 @@ def data_importer(file_to_be_imported, file_name, remove_columns=True):
                           'credit card default': ['BILL_AMT6', 'BILL_AMT5', 'BILL_AMT4', 'BILL_AMT3', 'BILL_AMT2',
                                                   'PAY_6', 'PAY_5', 'PAY_4', 'PAY_3', 'PAY_2'],
                           'eeg eye states': ['P7', 'F8', 'T8', 'P8', 'FC5'],
-                          'skin nonskin': ['B']
+                          'skin nonskin': ['B'],
+                          'htru': ['mean_dm_snr_curve', 'kurtosis_dm_snr_curve', 'skewness_profile', 'mean_profile'],
+                          'occupancy': ['HumidityRatio', 'Temperature'],
+                          'shuttle': ['S7', 'S8', 'S9']
                           }
 
     ret_df = pd.read_csv(file_to_be_imported)
@@ -104,8 +108,6 @@ for filename in glob.glob(path):
     dataset_name = filename[73:-4].replace("_", " ")
     print(dataset_name)
     df, out_class = data_importer(filename, dataset_name)
-    if dataset_name == 'bitcoin heist data':
-        df = df.drop(columns=['address'])
 
     corr_matrix = df.corr().round(4)
     if dataset_name in ('cover type', 'connect-4'):
@@ -123,4 +125,4 @@ for filename in glob.glob(path):
         if len(new_matrix) > 0:
             high_corr_feat = new_matrix.columns.tolist()
             best_feat = find_best_combination(df, out_class, high_corr_feat)
-            best_feat.to_csv(dataset_name + '.csv')
+            best_feat.to_csv('best_feat_' + dataset_name + '.csv')
