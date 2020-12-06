@@ -75,10 +75,28 @@ def ensemble_predictions(members, testX):
     return results
 
 
-def dataset_uploader(item, target_var='class', cross_split=5):
+def dataset_uploader(item, target_var='class', cross_split=5, apply_smothe=True, remove_columns=True):
     le = LabelEncoder()
-    dataset = pd.read_csv('datasets-UCI/Used_data/' + item['dataset'] + '.csv')
+    file_name = item['dataset']
+    feat_to_be_deleted = {'bank': ['euribor3m', 'emp.var.rate'],
+                          'cover_type': ['Wilderness_Area1', 'Aspect', 'Hillshade_9am', 'Hor_Dist_Hydrology'],
+                          'letter_recognition': ['y-box', 'high', 'width'],
+                          'online_shoppers_intention': ['BounceRates', 'ProductRelated', 'Inform_Duration'],
+                          'avila': ['F10'],
+                          'credit_card_default': ['BILL_AMT6', 'BILL_AMT5', 'BILL_AMT4', 'BILL_AMT3', 'BILL_AMT2',
+                                                  'PAY_6', 'PAY_5', 'PAY_4', 'PAY_3', 'PAY_2'],
+                          'eeg_eye_states': ['P7', 'F8', 'T8', 'P8', 'FC5'],
+                          'skin_nonskin': ['B'],
+                          'htru': ['mean_dm_snr_curve', 'kurtosis_dm_snr_curve', 'skewness_profile', 'mean_profile'],
+                          'occupancy': ['HumidityRatio', 'Temperature'],
+                          'shuttle': ['S7', 'S8', 'S9']
+                          }
+    dataset = pd.read_csv('datasets-UCI/new_datasets/' + item['dataset'] + '.csv')
     dataset = dataset.dropna().reset_index(drop=True)
+    if remove_columns:
+        if file_name in feat_to_be_deleted.keys():
+            columns_to_be_deleted = [item for item in dataset.columns.tolist() if item in feat_to_be_deleted[file_name]]
+            dataset = dataset.drop(columns=columns_to_be_deleted)
     col_types = dataset.dtypes
     out_disc_temp = []
     for index, value in col_types.items():
@@ -100,7 +118,8 @@ def dataset_uploader(item, target_var='class', cross_split=5):
     cv = StratifiedKFold(n_splits=cross_split)
     for train_idx, test_idx, in cv.split(X, y):
         X_train, y_train = X[X.index.isin(train_idx)], y[train_idx]
-        X_train, y_train = SMOTE().fit_sample(X_train, y_train)
+        if apply_smothe:
+            X_train, y_train = SMOTE().fit_sample(X_train, y_train)
         X_test, y_test = X[X.index.isin(test_idx)], y[test_idx]
         X_train_list.append(X_train)
         X_test_list.append(X_test)
@@ -110,7 +129,7 @@ def dataset_uploader(item, target_var='class', cross_split=5):
 
 
 def rule_metrics_calculator(num_examples, y_test, rule_labels, model_labels, perturbed_labels, rule_n,
-                            complete, avg_length):
+                            complete, avg_length, overlap, n_classes):
     """
     Calculate the correctness, fidelity, robustness and number of rules. The completeness, average length and number
     of rules are calculated in a different way for each rule extractor and passed as inputs
@@ -133,3 +152,7 @@ def rule_metrics_calculator(num_examples, y_test, rule_labels, model_labels, per
     print("Robustness of the ruleset is: " + str(robustness))
     print("Number of rules : " + str(rule_n))
     print("Average rule length: " + str(avg_length))
+    print("Fraction overlap: " + str(overlap))
+    class_fraction = len(set(rule_labels)) / n_classes
+    print("Fraction of classes: " + str(class_fraction))
+    return [complete, correctness, fidelity, robustness, rule_n, avg_length, overlap, class_fraction]
