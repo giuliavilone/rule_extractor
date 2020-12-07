@@ -7,8 +7,9 @@ from sklearn.metrics import accuracy_score
 import copy
 from common_functions import perturbator, model_train, dataset_uploader, create_model, rule_metrics_calculator
 from rxren_rxncn_functions import rule_pruning, rule_elicitation, ruleset_accuracy, rule_size_calculator
+from scipy.stats import mode
 np.random.seed(3)
-
+import sys
 
 # Functions
 def input_delete(insignificant_index, in_df, in_weight=None):
@@ -86,14 +87,16 @@ def network_pruning(w, correct_x, correct_y, test_x, test_y, accuracy, in_item=N
         pruning = False
 
     theta = min(error_list)
+    max_error = max(error_list)
     while pruning:
         insignificant_neurons = [i for i, e in enumerate(error_list) if e <= theta]
         new_res = model_pruned_prediction(insignificant_neurons, test_x, in_item, in_weight=w)
         new_acc = accuracy_score(new_res, test_y)
         if new_acc >= accuracy - TOLERANCE:
             new_error_list = [e for i, e in enumerate(error_list) if e > theta]
-            # Leaving at least one significant neuron
-            if len(new_error_list) > 1:
+            # Leaving at least one significant neuron and avoid going up to the max error in case more than two
+            # neurons share the same high error
+            if len(new_error_list) > 1 and min(new_error_list) < max_error:
                 theta = min(new_error_list)
             else:
                 pruning = False
@@ -114,6 +117,9 @@ def rule_limits_calculator(c_x, c_y, miss_classified_list, significant_neurons, 
                                                    for k in np.unique(miss_class[:, -1])
                                                    if len(miss_class[:, i][miss_class[:, -1] == k]) > (error[i] * alpha)
                                                    ]
+    # If no rules can be created, the rule set must assign the majority class
+    if len(grouped_miss_class) == 0:
+        grouped_miss_class += [{'neuron': 0, 'class': mode(c_y)[0][0], 'limits': [min(c_x[:, 0]), max(c_x[:, 0])]}]
     return grouped_miss_class
 
 
@@ -212,6 +218,7 @@ for ix in range(len(X_train_list)):
                                                               )
 
     significant_index = [i for i in range(weights[0].shape[0]) if i not in ins_index]
+
     print("Accuracy of pruned network", new_accuracy)
 
     rule_limits = rule_limits_calculator(correctX, correcty, miss_list, significant_index, err, alpha=0.1)
