@@ -129,10 +129,6 @@ def run_c45_pane(x_tot, y_tot, x_test):
 
 # Main code
 parameters = pd.read_csv('datasets-UCI/Used_data/summary_new.csv')
-dataset_par = parameters.iloc[5]
-print('--------------------------------------------------')
-print(dataset_par['dataset'])
-print('--------------------------------------------------')
 # Global variables
 original_study = False
 if original_study:
@@ -171,15 +167,19 @@ if original_study:
     xTot = np.concatenate((X, xSynth), axis=0)
     yTot = np.transpose(np.concatenate([ensemble_res, ySynth], axis=1))
 else:
-    X_train_list, X_test_list, y_train_list, y_test_list, _, _ = dataset_uploader(dataset_par, apply_smothe=False)
     metric_list = []
-    for ix in range(len(X_train_list)):
+    for ix in range(len(parameters)):
+        dataset_par = parameters.iloc[ix]
+        X_train_list, X_test_list, y_train_list, y_test_list, _, _ = dataset_uploader(dataset_par, apply_smothe=False)
+        print('--------------------------------------------------')
+        print(dataset_par['dataset'])
+        print('--------------------------------------------------')
         X_train = X_train_list[ix]
         X_test = X_test_list[ix]
         y_train = y_train_list[ix]
         y_test = y_test_list[ix]
         X_train, X_test = X_train.to_numpy(), X_test.to_numpy()
-        model = load_model('trained_models/trained_model_' + dataset_par['dataset'] + '_' + str(ix) + '.h5')
+        model = load_model('trained_model_' + dataset_par['dataset'] + '_' + str(ix) + '.h5')
         synth_samples = X_train.shape[0] * 2
         xSynth = synthetic_data_generator(X_train, synth_samples)
         ySynth = np.argmax(model.predict(xSynth), axis=1)
@@ -190,6 +190,6 @@ else:
 
     pd.DataFrame(metric_list, columns=['complete', 'correctness', 'fidelity', 'robustness', 'rule_n', 'avg_length',
                                        'overlap', 'class_fraction']
-                 ).to_csv('c45_metrics_' + dataset_par['dataset'] + '.csv')
+                 ).to_csv('c45_metrics.csv')
 # This uses the CART algorithm (see https://scikit-learn.org/stable/modules/tree.html)
 

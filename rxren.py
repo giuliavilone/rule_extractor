@@ -9,7 +9,7 @@ from common_functions import perturbator, model_train, dataset_uploader, create_
 from rxren_rxncn_functions import rule_pruning, rule_elicitation, ruleset_accuracy, rule_size_calculator
 from scipy.stats import mode
 np.random.seed(3)
-import sys
+
 
 # Functions
 def input_delete(insignificant_index, in_df, in_weight=None):

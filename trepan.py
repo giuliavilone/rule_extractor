@@ -3,6 +3,7 @@
 import numpy as np
 from scipy.stats import gaussian_kde, entropy, mode
 import copy
+import sys
 
 
 class Oracle:
@@ -14,31 +15,31 @@ class Oracle:
         self.disc = discrete_feature
         self.num_features = self.X.shape[-1]
 
-    def construct_training_distribution(self, data, feature_no):
+    def construct_training_distribution(self, data, feature_no, size):
         """Get the density estimates for each feature using a kernel density estimator.
         Any estimator could be used as described here:
         https://ned.ipac.caltech.edu/level5/March02/Silverman/paper.pdf """
         if feature_no in self.disc:
             values, prob = np.unique(data, return_counts=True)
             prob = prob / sum(prob)
-            sampled_val = np.random.choice(values, 1, p=prob)[0]
+            sampled_val = np.random.choice(values, size, p=prob)
         else:
             try:
-                sampled_val = gaussian_kde(data, bw_method='silverman').resample(1)[0]
+                sampled_val = gaussian_kde(data, bw_method='silverman').resample(size)[0]
             except:
                 values, prob = np.unique(data, return_counts=True)
                 prob = prob / sum(prob)
-                sampled_val = np.random.choice(values, 1, p=prob)[0]
+                sampled_val = np.random.choice(values, size, p=prob)
         return sampled_val
 
-    def generate_instance(self, constraint):
+    def generate_instances(self, constraint, size):
         """Given the constraints that an instance must satisfy, generate an instance """
-        instance = np.zeros(self.num_features)
+        instance = np.zeros((size, self.num_features))
         unlimited_feat = [i for i in range(self.num_features) if i not in constraint.get_constrained_features()]
         for feature_no in unlimited_feat:
             # According to the paper, if the variable is categorical the value must be selected according to
             # the frequency of the discrete values
-            instance[feature_no] = self.construct_training_distribution(self.X[:, feature_no], feature_no)
+            instance[:, feature_no] = self.construct_training_distribution(self.X[:, feature_no], feature_no, size)
 
         for rule in constraint.constraint:
             rule_passed = rule['passed']
@@ -49,15 +50,11 @@ class Oracle:
                     data = self.X[:, feat_no][self.X[:, feat_no] >= thresh]
                 else:
                     data = self.X[:, feat_no][self.X[:, feat_no] < thresh]
-                instance[feat_no] = self.construct_training_distribution(data, feat_no)
+                if len(data) > 0:
+                    instance[:, feat_no] = self.construct_training_distribution(data, feat_no, size)
+                else:
+                    instance[:, feat_no] = self.construct_training_distribution(self.X[:, feat_no], feat_no, size)
         return instance
-
-    def generate_instances(self, constraint, size):
-        new_instances = []
-        for i in range(size):
-            new_instances.append(self.generate_instance(constraint))
-
-        return np.array(new_instances)
 
     def get_oracle_labels(self, samples):
         """Returns the label predicated by the oracle network for example"""
@@ -74,7 +71,6 @@ class Constraint:
 
     def satisfy(self, instance):
         """Given an instance, check whether it satisfies the constraint """
-        # TODO check this function
         # Initializing at true in case the constrain list is empty
         ans = True
         for rule in self.constraint:
@@ -147,7 +143,7 @@ class Tree:
         self.initial_labels = oracle.y
         self.num_examples = len(oracle.X)
         # Improvement is the percentage by which gain should improve on addition of a new test. (Can be from 1.0+)
-        self.tree_params = {"tree_size": 15, "split_min": 1000, "num_feature_splits": 15, 'test_improvement': 1.1}
+        self.tree_params = {"tree_size": 10, "split_min": 1000, "num_feature_splits": 30}
         self.num_nodes = 0
         self.max_levels = 0
         self.root = self.construct_node(self.initial_data, self.initial_labels, Constraint(), '', 'root')
@@ -219,30 +215,29 @@ class Tree:
         # Calculate and return gain
         return self.get_gain(labels, split1, split2), split1, split2
 
-    @staticmethod
-    def expand_mofn_test(test, feature, threshold, greater, increment_m):
+    def expand_mofn_test(self, test, feature, threshold, samples, labels, original_gain):
         """
         Constructs and returns a new m-of-n test using the passed test and
         other parameters.
         """
-        # Check for feature redundancy
-        for feat in test[1]:
-            if feature == feat[0]:
-                if greater == feat[2]:
-                    # Just return the unmodified existing test if we'd add a threshold with same feature and sign
-                    return test
-                else:
-                    # Also just return the same if the two tests would overlap
-                    if (greater and threshold <= feat[1]) or (not greater and threshold >= feat[1]):
-                        return test
-        # If we didn't find redundancy, actually create the test
-        if increment_m:
-            new_m = test[0] + 1
-        else:
-            new_m = test[0]
-        new_feats = copy.deepcopy(test[1])
-        new_feats.append((feature, threshold, greater))
-        return [new_m, new_feats]
+        test_changed = 0
+        out_test = copy.deepcopy(test)
+        new_test = [i for i in test[1] if i[0] != feature]
+        candidate_test = [(feature, threshold, True), (feature, threshold, False)]
+        new_test_list = [[test[0], new_test + [candidate_test[0]]], [test[0], new_test + [candidate_test[1]]],
+                         [test[0] + 1, new_test + [candidate_test[0]]], [test[0] + 1, new_test + [candidate_test[1]]],
+                         ]
+        gain_list = []
+        for item in new_test_list:
+            gain, _, _ = self.mofn_info_gain(item, samples, labels)
+            gain_list.append(gain)
+
+        if max(gain_list) > original_gain:
+            out_test = new_test_list[gain_list.index(max(gain_list))]
+            test_changed = 1
+            original_gain = max(gain_list)
+
+        return out_test, test_changed, original_gain
 
     def make_mofn_tests(self, best_test, feat_split_points, samples, labels):
         """
@@ -259,59 +254,52 @@ class Tree:
         init_gain = self.binary_info_gain(best_test[1], samples[:, best_test[0]], labels)
         beam = [[1, [(best_test[0], best_test[1], False)]], [1, [(best_test[0], best_test[1], True)]]]
         current_gains = [init_gain, init_gain]
-        beam_changed = True
+        beam_changed = 1
         n = 1
         # Set up loop to repeat until beam isn't changed
         while beam_changed:
             print('Test of size %d...' % n)
             n = n + 1
-            beam_changed = False
+            beam_changed = 0
             # Loop over the current best m-of-n tests in beam
             for ix in range(len(beam)):
                 # Loop over the single-features in candidate tests dict
                 for feature in feat_split_points:
                     # Loop over the thresholds for the feature
                     for threshold in feat_split_points[feature]:
-                        # Loop over greater than/lesser than tests
-                        for greater in [True, False]:
-                            # Loop over m+1-of-n+1 and m-of-n+1 tests
-                            for increment_m in [True, False]:
-                                # Add selected feature+threshold to to current test
-                                new_test = self.expand_mofn_test(beam[ix], feature, threshold, greater, increment_m)
-                                # Get info gain and compare it
-                                gain, _, _ = self.mofn_info_gain(new_test, samples, labels)
-                                # Compare gains
-                                if gain > self.tree_params['test_improvement'] * current_gains[ix]:
-                                    # Replace worst in beam if gain better than worst in beam
-                                    beam[ix] = new_test
-                                    current_gains[ix] = gain
-                                    beam_changed = True
+                        # Add selected feature+threshold to to current test
+                        beam[ix], beam_changed, current_gains[ix] = self.expand_mofn_test(beam[ix], feature, threshold,
+                                                                                          samples, labels,
+                                                                                          current_gains[ix])
             # Set new tests in beam and associated gains
         # Return the best test in beam
         return beam[np.argmax(current_gains)]
 
-    def make_candidate_tests(self, feat_values, labels):
+    def make_candidate_tests(self, feat_values, labels, feature_number):
         """
         A function that should take one feature and all samples, and return the the possible breakpoints for the
         input feature. These are the midpoints between any two samples that do not have the same label.
+        If the feature is discrete, the breakpoints correspond to its unique value.
         """
         # Get unique values for feature
         values = np.unique(feat_values)
         breakpoints = []
         # Loop over values and check if diff classes between values
-        for value in range(len(values) - 1):
-            # Check if different classes in associated labels, find midpoint if so
-            labels1 = labels[feat_values == values[value]]
-            labels2 = labels[feat_values == values[value + 1]]
-            l1unique = list(np.unique(labels1))
-            l2unique = list(np.unique(labels2))
-            if l1unique != l2unique or len(l1unique) > 1 or len(l2unique) > 1:
-                midpoint = (values[value] + values[value + 1]) / 2
-                breakpoints.append(midpoint)
-        # Trim list of breakpoints to 20 if too long
-        if len(breakpoints) > self.tree_params["num_feature_splits"]:
-            idx = np.rint(np.linspace(0, len(breakpoints) - 1, num=20)).astype(int)
-            breakpoints = [breakpoints[i] for i in idx]
+        if feature_number not in self.oracle.disc:
+            for value in range(len(values) - 1):
+                # Check if different classes in associated labels, find midpoint if so
+                labels1 = labels[feat_values == values[value]]
+                labels2 = labels[feat_values == values[value + 1]]
+                l1unique = list(np.unique(labels1))
+                l2unique = list(np.unique(labels2))
+                if l1unique != l2unique or len(l1unique) > 1 or len(l2unique) > 1:
+                    midpoint = (values[value] + values[value + 1]) / 2
+                    breakpoints.append(midpoint)
+            if len(breakpoints) > self.tree_params["num_feature_splits"]:
+                idx = np.rint(np.linspace(0, len(breakpoints) - 1, num=self.tree_params["num_feature_splits"])).astype(int)
+                breakpoints = [breakpoints[i] for i in idx]
+        else:
+            breakpoints = values
         # Add list of breakpoints to feature dict
         return breakpoints
 
@@ -391,7 +379,7 @@ class Tree:
             if i in node.blacklisted_features:
                 continue
 
-            split_point, test_gain, all_split_points = self.feature_split(node.data[:, i], node.labels)
+            split_point, test_gain, all_split_points = self.feature_split(node.data[:, i], node.labels, i)
             split_points_per_feat[i] = all_split_points
             if best_gain < test_gain:
                 best_feat = i
@@ -414,8 +402,7 @@ class Tree:
             node.left = None
             node.right = None
         else:
-            _, left_ind, _ = self.mofn_info_gain(m_of_n_test, node.data, node.labels)
-            _, _, right_ind = self.mofn_info_gain(m_of_n_test, node.data, node.labels)
+            _, left_ind, right_ind = self.mofn_info_gain(m_of_n_test, node.data, node.labels)
 
             left_constraints = copy.deepcopy(node.constraints)
             right_constraints = copy.deepcopy(node.constraints)
@@ -433,14 +420,16 @@ class Tree:
 
         return node
 
-    def feature_split(self, feature_data, labels):
+    def feature_split(self, feature_data, labels, feature_no):
         """
         Find the best binary split for the input feature
         :param labels: array of the output classes related to each input instance
         :param feature_data: training data related to a single independent feature
+        :param feature_no: number of the feature under analysis
         :return: the point where the data must be split and its minimum squared error
         """
-        split_points = self.make_candidate_tests(feature_data, labels)
+
+        split_points = self.make_candidate_tests(feature_data, labels, feature_no)
         best_gain = 0
         best_split_point = None
 

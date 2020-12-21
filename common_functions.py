@@ -75,7 +75,7 @@ def ensemble_predictions(members, testX):
     return results
 
 
-def dataset_uploader(item, target_var='class', cross_split=5, apply_smothe=True, remove_columns=True):
+def dataset_uploader(item, path, target_var='class', cross_split=5, apply_smothe=True, remove_columns=True):
     le = LabelEncoder()
     file_name = item['dataset']
     feat_to_be_deleted = {'bank': ['euribor3m', 'emp.var.rate'],
@@ -91,7 +91,7 @@ def dataset_uploader(item, target_var='class', cross_split=5, apply_smothe=True,
                           'occupancy': ['HumidityRatio', 'Temperature'],
                           'shuttle': ['S7', 'S8', 'S9']
                           }
-    dataset = pd.read_csv('datasets-UCI/new_datasets/' + item['dataset'] + '.csv')
+    dataset = pd.read_csv(path + item['dataset'] + '.csv')
     dataset = dataset.dropna().reset_index(drop=True)
     if remove_columns:
         if file_name in feat_to_be_deleted.keys():

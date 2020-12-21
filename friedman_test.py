@@ -17,7 +17,7 @@ def method_ranking(df, dataset):
             #    ranks = list(map(lambda x: 5-x, ranks))
             ranks.insert(0, label)
             outlist.append(ranks)
-        outdf = pd.DataFrame(outlist, columns=['item', 'rank1', 'rank2', 'rank3', 'rank4'])
+        outdf = pd.DataFrame(outlist, columns=['item', 'rank1', 'rank2', 'rank3', 'rank4', 'rank5'])
         outdf.to_csv('ranks_'+dataset+'.csv')
 
 
@@ -26,12 +26,19 @@ method_groups = data.groupby(['Dataset'], as_index=False)
 
 
 method_list = []
+out_list = []
+out_df = pd.DataFrame()
 for index, item in method_groups:
     print(index)
-    method_ranking(item, index)
-    item = item.drop(['Method', 'Dataset'], axis=1)
-    item = item.to_numpy()
-    data1, data2, data3, data4 = item
-    stat, p = friedmanchisquare(data1, data2, data3, data4)
+    grouped_item = item.groupby('Method', as_index=False).mean()
+    grouped_item['Dataset'] = index
+    out_df = out_df.append(grouped_item)
+    # method_ranking(grouped_item, index)
+    grouped_item = grouped_item.drop(['Method', 'Dataset'], axis=1)
+    grouped_item = grouped_item.to_numpy()
+    data1, data2, data3, data4, data5 = grouped_item
+    stat, p = friedmanchisquare(data1, data2, data3, data4, data5)
+    out_list.append([index, stat, p])
     print('Friedman statistics=%.3f, p=%.3f' % (stat, p))
-
+pd.DataFrame(out_list, columns=['dataset', 'stat', 'p-value']).to_csv('Friedman_test.csv')
+out_df.to_csv('Mean_metrics_values.csv')
