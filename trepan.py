@@ -15,21 +15,23 @@ class Oracle:
         self.disc = discrete_feature
         self.num_features = self.X.shape[-1]
 
+    @staticmethod
+    def random_choice_sampler(data, size):
+        values, prob = np.unique(data, return_counts=True)
+        prob = prob / sum(prob)
+        return np.random.choice(values, size, p=prob)
+
     def construct_training_distribution(self, data, feature_no, size):
         """Get the density estimates for each feature using a kernel density estimator.
         Any estimator could be used as described here:
         https://ned.ipac.caltech.edu/level5/March02/Silverman/paper.pdf """
         if feature_no in self.disc:
-            values, prob = np.unique(data, return_counts=True)
-            prob = prob / sum(prob)
-            sampled_val = np.random.choice(values, size, p=prob)
+            sampled_val = self.random_choice_sampler(data, size)
         else:
             try:
                 sampled_val = gaussian_kde(data, bw_method='silverman').resample(size)[0]
             except:
-                values, prob = np.unique(data, return_counts=True)
-                prob = prob / sum(prob)
-                sampled_val = np.random.choice(values, size, p=prob)
+                sampled_val = self.random_choice_sampler(data, size)
         return sampled_val
 
     def generate_instances(self, constraint, size):
@@ -58,8 +60,8 @@ class Oracle:
 
     def get_oracle_labels(self, samples):
         """Returns the label predicated by the oracle network for example"""
-        onehot = self.network.predict(samples)
-        return np.argmax(onehot, axis=1)
+        one_hot = self.network.predict(samples)
+        return np.argmax(one_hot, axis=1)
 
 
 class Constraint:
@@ -207,8 +209,14 @@ class Tree:
         m = mofntest[0]
         sep_tests = mofntest[1]
         # List comprehension to generate a boolean index that tells us which samples passed the test.
-        split_test = np.array([samples[:, sep[0]] >= sep[1] if sep[2] else
-                              samples[:, sep[0]] < sep[1] for sep in sep_tests])
+        split_test = np.empty([len(sep_tests), len(samples)])
+        for ix in range(len(sep_tests)):
+            sep = sep_tests[ix]
+            if sep in self.oracle.disc:
+                split_test[ix, :] = np.array([samples[:, sep[0]] == sep[1] if sep[2] else samples[:, sep[0]] != sep[1]])
+            else:
+                split_test[ix, :] = np.array([samples[:, sep[0]] >= sep[1] if sep[2] else samples[:, sep[0]] < sep[1]])
+
         # Now check whether the number of tests passed per sample is higher than m
         split1 = sum(split_test) >= m
         split2 = np.invert(split1)
@@ -322,7 +330,6 @@ class Tree:
         through which the entire tree can be accessed"""
         import queue as Q
         node_queue = Q.PriorityQueue(maxsize=self.tree_params["tree_size"])
-        # node_queue = Q.PriorityQueue()
 
         node_queue.put((self.get_priority(self.root), self.num_nodes, self.root), block=False)
         self.num_nodes += 1
@@ -374,6 +381,11 @@ class Tree:
         best_feat = None
         best_gain = 0
         split_points_per_feat = {}
+        values, prob = np.unique(node.labels, return_counts=True)
+        print(values, prob)
+        prob = prob / sum(prob)
+        print(prob)
+        sys.exit()
 
         for i in range(self.oracle.num_features):
             if i in node.blacklisted_features:
