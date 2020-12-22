@@ -2,6 +2,7 @@
 # and from https://github.com/KesterJ/TREPAN/blob/master/TREPAN-skeleton.py
 import numpy as np
 from scipy.stats import gaussian_kde, entropy, mode
+from statsmodels.stats.proportion import proportion_confint
 import copy
 import sys
 
@@ -145,7 +146,10 @@ class Tree:
         self.initial_labels = oracle.y
         self.num_examples = len(oracle.X)
         # Improvement is the percentage by which gain should improve on addition of a new test. (Can be from 1.0+)
-        self.tree_params = {"tree_size": 10, "split_min": 1000, "num_feature_splits": 30}
+        self.tree_params = {"tree_size": 10, "split_min": 1000, "num_feature_splits": 30, 'delta': 0.05, 'eps': 0.05}
+        self.conf_interval_low, _ = proportion_confint(self.tree_params['split_min'] * (1 - self.tree_params['eps']),
+                                                       self.tree_params['split_min'],
+                                                       alpha=self.tree_params['delta'])
         self.num_nodes = 0
         self.max_levels = 0
         self.root = self.construct_node(self.initial_data, self.initial_labels, Constraint(), '', 'root')
@@ -381,11 +385,13 @@ class Tree:
         best_feat = None
         best_gain = 0
         split_points_per_feat = {}
-        values, prob = np.unique(node.labels, return_counts=True)
-        print(values, prob)
+        # Check if the probability of the most common class is above the lowest limit of the proportion confidence
+        # interval determined by the parameters delta and eps. The authors want to check if the node covers with
+        # high probability only instances of a single class
+        _, prob = np.unique(node.labels, return_counts=True)
         prob = prob / sum(prob)
-        print(prob)
-        sys.exit()
+        if max(prob) > self.conf_interval_low:
+            return None
 
         for i in range(self.oracle.num_features):
             if i in node.blacklisted_features:
