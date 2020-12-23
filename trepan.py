@@ -146,7 +146,7 @@ class Tree:
         self.initial_labels = oracle.y
         self.num_examples = len(oracle.X)
         # Improvement is the percentage by which gain should improve on addition of a new test. (Can be from 1.0+)
-        self.tree_params = {"tree_size": 10, "split_min": 1000, "num_feature_splits": 30, 'delta': 0.05, 'eps': 0.05}
+        self.tree_params = {"tree_size": 15, "split_min": 1000, "num_feature_splits": 50, 'delta': 0.05, 'eps': 0.05}
         self.conf_interval_low, _ = proportion_confint(self.tree_params['split_min'] * (1 - self.tree_params['eps']),
                                                        self.tree_params['split_min'],
                                                        alpha=self.tree_params['delta'])
@@ -308,7 +308,8 @@ class Tree:
                     midpoint = (values[value] + values[value + 1]) / 2
                     breakpoints.append(midpoint)
             if len(breakpoints) > self.tree_params["num_feature_splits"]:
-                idx = np.rint(np.linspace(0, len(breakpoints) - 1, num=self.tree_params["num_feature_splits"])).astype(int)
+                idx = np.rint(np.linspace(0, len(breakpoints) - 1,
+                                          num=self.tree_params["num_feature_splits"])).astype(int)
                 breakpoints = [breakpoints[i] for i in idx]
         else:
             breakpoints = values
@@ -330,8 +331,7 @@ class Tree:
         return l2e
 
     def build_tree(self):
-        """Main method which builds the tree and returns the root
-        through which the entire tree can be accessed"""
+        """Main method which builds the tree and returns the root through which the entire tree can be accessed"""
         import queue as Q
         node_queue = Q.PriorityQueue(maxsize=self.tree_params["tree_size"])
 
