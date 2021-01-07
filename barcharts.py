@@ -54,23 +54,24 @@ df = pd.DataFrame({
               'Person activity', 'Shuttle', 'Skin']
 })
 
-p1 = sns.lmplot(data=df, x="x", y="y", hue='Dataset', fit_reg=False, scatter_kws={'s': 250})
+p1 = sns.lmplot(data=df, x="x", y="y", hue='Dataset', fit_reg=False, scatter_kws={'s': 275})
 
 for line in range(0, df.shape[0]):
     if df.Dataset[line] == 'Occupancy':
-        plt.gca().text(df.x[line] + 0.6, df.y[line]-1000, df.y[line], horizontalalignment='left', size='small',
+        plt.gca().text(df.x[line] + 0.6, df.y[line]-1000, df.y[line], horizontalalignment='left', size='medium',
                        color='black')
     elif df.Dataset[line] == 'Adult':
-        plt.gca().text(df.x[line] + 0.6, df.y[line]+100, df.y[line], horizontalalignment='left', size='small',
+        plt.gca().text(df.x[line] + 0.6, df.y[line]+100, df.y[line], horizontalalignment='left', size='medium',
                        color='black')
     else:
-        plt.gca().text(df.x[line]+0.6, df.y[line], df.y[line], horizontalalignment='left', size='small',
+        plt.gca().text(df.x[line]+0.6, df.y[line], df.y[line], horizontalalignment='left', size='medium',
                        color='black')
 
 plt.xlabel('Number of output classes')
 plt.ylabel('Number of instances')
 plt.yscale('log')
 plt.yticks([])
+plt.legend(labelspacing=1)
 
 plt.show()
 
@@ -84,14 +85,14 @@ df = pd.DataFrame({
               'Person activity', 'Shuttle', 'Skin']
 })
 
-sns.barplot(x=df.Dataset, y=df.total, color="red")
+sns.barplot(x=df.Dataset, y=df.total, color='#E74C3C')
 
 #Plot 2 - overlay - "bottom" series
-bottom_plot = sns.barplot(x=df.Dataset, y=df.continuous, color="#0000A3")
+bottom_plot = sns.barplot(x=df.Dataset, y=df.continuous, color='#21618C')
 
-topbar = plt.Rectangle((0, 0), 1, 1, fc="red", edgecolor='white')
-bottombar = plt.Rectangle((0, 0), 1, 1, fc='#0000A3',  edgecolor='white')
-l = plt.legend([bottombar, topbar], ['Continuous features', 'Categorical features'], loc=1, ncol=2, prop={'size': 16})
+topbar = plt.Rectangle((0, 0), 1, 1, fc='#E74C3C', edgecolor='white')
+bottombar = plt.Rectangle((0, 0), 1, 1, fc='#21618C',  edgecolor='white')
+l = plt.legend([bottombar, topbar], ['Continuous features', 'Categorical features'], loc=1, ncol=1, prop={'size': 18})
 l.draw_frame(False)
 
 #Optional code - Make plot look nicer

@@ -156,8 +156,8 @@ class Tree:
 
     @staticmethod
     def construct_node(data, labels, constraints, parent, name):
-        """ Input Args - data: the training data that this node has
-            Output Args - A Node variable
+        """
+        Input Args - data: the training data that this node has Output Args - A Node variable
         """
         return Node(data, labels, constraints, parent, name)
 
@@ -188,8 +188,7 @@ class Tree:
     def binary_info_gain(self, threshold, samples, labels):
         """
         Takes a feature and a threshold, examples and their
-        labels, and find the best feature and breakpoint to split on to maximise
-        information gain.
+        labels, and find the best feature and breakpoint to split on to maximise information gain.
         Assumes only two classes. Would need to be altered if more are required.
         """
         # Get two halves of threshold
@@ -216,7 +215,7 @@ class Tree:
         split_test = np.empty([len(sep_tests), len(samples)])
         for ix in range(len(sep_tests)):
             sep = sep_tests[ix]
-            if sep in self.oracle.disc:
+            if sep[0] in self.oracle.disc:
                 split_test[ix, :] = np.array([samples[:, sep[0]] == sep[1] if sep[2] else samples[:, sep[0]] != sep[1]])
             else:
                 split_test[ix, :] = np.array([samples[:, sep[0]] >= sep[1] if sep[2] else samples[:, sep[0]] < sep[1]])
@@ -229,32 +228,33 @@ class Tree:
 
     def expand_mofn_test(self, test, feature, threshold, samples, labels, original_gain):
         """
-        Constructs and returns a new m-of-n test using the passed test and
-        other parameters.
+        Constructs and returns a new m-of-n test using the passed test and other parameters.
         """
+        ret_gain = original_gain
         test_changed = 0
         out_test = copy.deepcopy(test)
         new_test = [i for i in test[1] if i[0] != feature]
+        # The search will start from a m+1-of-n+1 expression with m==n. If the information gain will not increase,
+        # m will be decreased by 1 until m = test[0] (thus keeping the m of the original test)
+        m = len(new_test) + 1
         candidate_test = [(feature, threshold, True), (feature, threshold, False)]
-        new_test_list = [[test[0], new_test + [candidate_test[0]]], [test[0], new_test + [candidate_test[1]]],
-                         [test[0] + 1, new_test + [candidate_test[0]]], [test[0] + 1, new_test + [candidate_test[1]]],
-                         ]
-        gain_list = []
-        for item in new_test_list:
-            gain, _, _ = self.mofn_info_gain(item, samples, labels)
-            gain_list.append(gain)
-
-        if max(gain_list) > original_gain:
-            out_test = new_test_list[gain_list.index(max(gain_list))]
-            test_changed = 1
-            original_gain = max(gain_list)
-
-        return out_test, test_changed, original_gain
+        while m >= test[0] and test_changed == 0:
+            new_test_list = [[m, new_test + [candidate_test[0]]], [m, new_test + [candidate_test[1]]]]
+            gain_list = []
+            for item in new_test_list:
+                gain, _, _ = self.mofn_info_gain(item, samples, labels)
+                gain_list.append(gain)
+            if max(gain_list) > ret_gain:
+                out_test = new_test_list[gain_list.index(max(gain_list))]
+                test_changed = 1
+                ret_gain = max(gain_list)
+            else:
+                m -= 1
+        return out_test, test_changed, ret_gain
 
     def make_mofn_tests(self, best_test, feat_split_points, samples, labels):
         """
         Finds the best m-of-n test, using a beam width of 2.
-
         NOTES:
         -NEEDS TO KNOW HOW TO COLLAPSE TESTS WHEN TWO REDUNDANT THINGS ARE PRESENT
             e.g. 2-of {y, z, x, ¬x} -> 1-of {y, z}
@@ -272,7 +272,7 @@ class Tree:
         while beam_changed:
             print('Test of size %d...' % n)
             n = n + 1
-            beam_changed = 0
+            # beam_changed = 0
             # Loop over the current best m-of-n tests in beam
             for ix in range(len(beam)):
                 # Loop over the single-features in candidate tests dict
