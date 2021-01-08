@@ -49,10 +49,16 @@ class Oracle:
             for counter in range(len(rule['n'])):
                 feat_no, thresh, greater = rule['n'][counter]
                 greater = np.invert(greater) if not rule_passed else greater
-                if greater:
-                    data = self.X[:, feat_no][self.X[:, feat_no] >= thresh]
+                if feat_no in self.disc:
+                    if greater:
+                        data = self.X[:, feat_no][self.X[:, feat_no] == thresh]
+                    else:
+                        data = self.X[:, feat_no][self.X[:, feat_no] != thresh]
                 else:
-                    data = self.X[:, feat_no][self.X[:, feat_no] < thresh]
+                    if greater:
+                        data = self.X[:, feat_no][self.X[:, feat_no] >= thresh]
+                    else:
+                        data = self.X[:, feat_no][self.X[:, feat_no] < thresh]
                 if len(data) > 0:
                     instance[:, feat_no] = self.construct_training_distribution(data, feat_no, size)
                 else:
@@ -64,19 +70,12 @@ class Oracle:
         one_hot = self.network.predict(samples)
         return np.argmax(one_hot, axis=1)
 
-
-class Constraint:
-    def __init__(self):
-        self.constraint = []
-
-    def add_rule(self, rule):
-        self.constraint.append(rule)
-
-    def satisfy(self, instance):
-        """Given an instance, check whether it satisfies the constraint """
+    def satisfy(self, instance, rule_list):
+        """Given an instance, check whether it satisfies the input rule list"""
         # Initializing at true in case the constrain list is empty
         ans = True
-        for rule in self.constraint:
+        for rule in rule_list:
+            rule_passed = rule['passed']
             test_passed = False
             m = rule['m']
             n = len(rule['n'])
@@ -84,13 +83,26 @@ class Constraint:
             counter = 0
             while (not test_passed) and counter < n:
                 feat_no, thresh, greater = rule['n'][counter]
-                if (greater and instance[feat_no] >= thresh) or ((not greater) and instance[feat_no] < thresh):
-                    features_passed += 1
+                greater = np.invert(greater) if not rule_passed else greater
+                if feat_no in self.disc:
+                    if (greater and instance[feat_no] == thresh) or ((not greater) and instance[feat_no] != thresh):
+                        features_passed += 1
+                else:
+                    if (greater and instance[feat_no] >= thresh) or ((not greater) and instance[feat_no] < thresh):
+                        features_passed += 1
                 if features_passed >= m:
                     test_passed = True
                 counter += 1
             ans = test_passed == rule['passed']
         return ans
+
+
+class Constraint:
+    def __init__(self):
+        self.constraint = []
+
+    def add_rule(self, rule):
+        self.constraint.append(rule)
 
     def get_constrained_features(self):
         """ Gives the list of indices for features on which constraint rules are present """
@@ -317,8 +329,8 @@ class Tree:
         return breakpoints
 
     def get_priority(self, node):
-        reach_n = len([instance for instance in self.initial_data if node.constraints.satisfy(instance)]) / \
-                  self.num_examples
+        instance_list = [i for i in self.initial_data if self.oracle.satisfy(i, node.constraints.constraint)]
+        reach_n = len(instance_list) / self.num_examples
         print(f"reach_n={reach_n}")
         fidelity_n = self.get_fidelity(node)
         print(f"fidelity_n={fidelity_n}")
@@ -463,7 +475,7 @@ class Tree:
     def predict(self, instance, root):
         if self.is_leaf(root):
             return root.dominant
-        if root.constraints.satisfy(instance):
+        if self.oracle.satisfy(instance, [root.split_rule]):
             return self.predict(instance, root.left)
         else:
             return self.predict(instance, root.right)
@@ -502,12 +514,12 @@ class Tree:
         print('Node name:', root.name)
         print('Node dominant: ', root.dominant)
         print('Is node a leaf? ', self.is_leaf(root))
-        for constraint in root.constraints.constraint:
-            print('Node rule: ', constraint)
         if self.is_leaf(root):
             print('Node level: ', root.level)
-            # print('Node split rule: ', root.split_rule)
+            for constraint in root.constraints.constraint:
+                print('Node rule: ', constraint)
         else:
+            print('Node split rule: ', root.split_rule)
             if root.left is not None:
                 self.print_tree_rule(root.left)
             if root.right is not None:
