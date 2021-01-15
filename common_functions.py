@@ -30,12 +30,19 @@ def create_model_old(train_x, num_classes, hidden_nodes):
 
 
 def create_model(train_x, n_classes, neurons, optimizer='Adam', init_mode='glorot_uniform',
-                 activation='sigmoid', dropout_rate=0.0, weight_constraint=None, loss='categorical_crossentropy',
-                 out_activation='softmax'):
+                 activation='sigmoid', dropout_rate=0.0, loss='categorical_crossentropy',
+                 out_activation='softmax'
+                 ):
     # create model
     model = Sequential()
-    model.add(Dense(neurons, input_dim=train_x.shape[1], activation=activation, kernel_initializer=init_mode,
-                    kernel_constraint=maxnorm(weight_constraint)))
+    model.add(Dense(neurons, input_dim=train_x.shape[1], activation=activation,
+                    kernel_initializer=init_mode
+                    )
+              )
+    model.add(Dropout(dropout_rate))
+    model.add(Dense(neurons, activation=activation, kernel_initializer=init_mode
+                    )
+              )
     model.add(Dropout(dropout_rate))
     model.add(Dense(n_classes, activation=out_activation))
     # Compile model
@@ -105,10 +112,11 @@ def dataset_uploader(item, path, target_var='class', cross_split=5, apply_smothe
                 dataset = pd.get_dummies(dataset, columns=[index])
                 out_disc_temp.append(index)
     # The number of the discrete features must take into account the new dummy columns
+    independent_columns = [item for item in dataset.columns.tolist() if item != 'class']
     out_disc = []
     for col in out_disc_temp:
-        out_disc += [i for i, v in enumerate(dataset.columns) if v.find(col + '_') > -1]
-    out_cont = [i for i, v in enumerate(dataset.columns) if i not in out_disc]
+        out_disc += [i for i, v in enumerate(independent_columns) if v.find(col + '_') > -1]
+    out_cont = [i for i, v in enumerate(independent_columns) if i not in out_disc]
 
     # Separating independent variables from the target one
     y = le.fit_transform(dataset[target_var].tolist())
@@ -153,6 +161,8 @@ def rule_metrics_calculator(num_examples, y_test, rule_labels, model_labels, per
     print("Number of rules : " + str(rule_n))
     print("Average rule length: " + str(avg_length))
     print("Fraction overlap: " + str(overlap))
-    class_fraction = len(set(rule_labels)) / n_classes
+    labels_considered = set(rule_labels)
+    labels_considered.discard(n_classes + 10)
+    class_fraction = len(set(labels_considered)) / n_classes
     print("Fraction of classes: " + str(class_fraction))
     return [complete, correctness, fidelity, robustness, rule_n, avg_length, overlap, class_fraction]

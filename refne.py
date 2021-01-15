@@ -66,7 +66,7 @@ def synthetic_data_generator(indf, n_samples):
     return outdf
 
 
-def interval_definer(data, attr, label, remove_single_values = False):
+def interval_definer(data, attr, label):
     """
     According to the paper, this function should do the ChiMerge Discretization algorithm, but the authors say that
     it continues as long as there are no instances belonging to different classes assigned to the same interval. This
@@ -79,18 +79,25 @@ def interval_definer(data, attr, label, remove_single_values = False):
     """
     out_df = copy.deepcopy(data[[attr, label]])
     out_df = out_df.sort_values(by=[attr], ignore_index=True)
+    out_df.drop_duplicates(inplace=True, ignore_index=True)
     changes = out_df[out_df[label].diff() != 0].index.tolist()
     values = out_df[attr].tolist()
     intervals = [[values[changes[i]], values[changes[i+1]-1]] for i in range(len(changes) - 1)]
-    if remove_single_values:
-        to_be_deleted = []
-        for ix in range(len(intervals)-1):
-            if intervals[ix][0] == intervals[ix][1] and intervals[ix][1] == intervals[ix+1][0]:
-                to_be_deleted.append(ix)
-        to_be_deleted.reverse()
-        for item in to_be_deleted:
-            intervals.pop(item)
-
+    # Removing duplicate intervals as sometimes the same value is associated with multiple classes
+    to_be_deleted = []
+    for ix in range(len(intervals)-1):
+        if intervals[ix][0] == intervals[ix][1] and intervals[ix][1] == intervals[ix+1][0]:
+            to_be_deleted.append(ix)
+    to_be_deleted.reverse()
+    for item in to_be_deleted:
+        intervals.pop(item)
+    # It can happen that there are no changes at the extremes of the value ranges, so these values might not be
+    # included in the list of intervals. Hence, it must be checked that the intervals cover the entire range,
+    # otherwise they must be extended by adding the min and/or max values
+    if intervals[-1][1] < max(values):
+        intervals.append([intervals[-1][1], max(values)])
+    if intervals[0][0] > min(values):
+        intervals.append([min(values), intervals[0][0]])
     return intervals
 
 
@@ -106,7 +113,7 @@ def discretizer(indf, intervals):
     for i in range(len(intervals)):
         min_val = intervals[i][0]
         max_val = intervals[i][1]
-        indf[(indf >= min_val) & (indf < max_val)] = min_val
+        indf[(indf >= min_val) & (indf <= max_val)] = min_val
     return indf.tolist()
 
 
@@ -118,7 +125,7 @@ def select_random_item(int_list, ex_item_list):
     return new_item
 
 
-def rule_evaluator(df, rule_columns, new_rule_set, ruleset, out_var, fidelity=0):
+def rule_evaluator(df, rule_columns, new_rule_set, out_var, model, fidelity=0.0):
     """
     Evaluate the fidelity of the new rule
     :param new_rule_set:
@@ -143,17 +150,12 @@ def rule_evaluator(df, rule_columns, new_rule_set, ruleset, out_var, fidelity=0)
     group_df = tot_df.groupby(rule_columns).agg(total=('same', 'sum'),
                                                 frequency=('same', 'count')).reset_index(drop=False)
     group_df['fidelity'] = group_df['total'] / group_df['frequency']
-    while True:
-        out_df = group_df[group_df['fidelity'] >= fidelity]
-        if len(out_df) == 0:
-            fidelity = max(fidelity - 0.1, 0)
-        else:
-            break
+    out_df = group_df[group_df['fidelity'] >= fidelity]
     new_rule_set = new_rule_set.merge(out_df[rule_columns], on=rule_columns)
     return new_rule_set
 
 
-def rule_maker(df, intervals, col, target_var):
+def rule_maker(df, intervals, col, target_var, model):
     """
     Creates the IF-THEN rules
     :param df: input dataframe
@@ -168,7 +170,7 @@ def rule_maker(df, intervals, col, target_var):
     random.shuffle(col)
     ret = []
     col_index = 0
-    while True:
+    while col_index < len(col):
         item = col[col_index]
         attr_list = outdf[[item, target_var]].groupby(item).agg(unique_class=(target_var, 'nunique'),
                                                                 max_class=(target_var, 'max')
@@ -188,34 +190,29 @@ def rule_maker(df, intervals, col, target_var):
                     max_class=(target_var, 'max')
                 ).reset_index(drop=False)
                 new_rules = attr_list[attr_list['unique_class'] == 1]
-        new_col = new_rules.columns.values.tolist()
-        new_col.remove('unique_class')
-        new_col.remove('max_class')
+
         if len(new_rules) > 0:
-            new_rules = rule_evaluator(outdf, new_col, new_rules, ret, target_var, fidelity=0.7)
+            new_col = new_rules.columns.values.tolist()
+            new_col.remove('unique_class')
+            new_col.remove('max_class')
+            new_rules = rule_evaluator(outdf, new_col, new_rules, target_var, model, fidelity=0.7)
             for index, row in new_rules.iterrows():
                 # Evaluate the fidelity of the new rule
-                new_dict = {'neuron': new_col}
-                new_dict['class'] = row['max_class'].tolist()
+                new_dict = {'neuron': new_col, 'class': row['max_class'].tolist()}
                 rule_intervals = []
                 for c in new_col:
                     interv = intervals[c]
                     rule_int = [item for item in interv if item[0] == row[c]]
-                    if len(rule_int) > 0:
-                        x = outdf[c]
-                        ix = np.where((x < rule_int[0][0]) | (x > rule_int[0][1]))[0]
-                        outdf = outdf.iloc[ix]
-                        rule_intervals += rule_int
+                    x = outdf[c]
+                    ix = np.where((x < rule_int[0][0]) | (x > rule_int[0][1]))[0]
+                    outdf = outdf.iloc[ix]
+                    rule_intervals += rule_int
                 new_dict['limits'] = rule_intervals
                 ret.append(new_dict)
             if len(ret) > 0:
                 break
         else:
             col_index += 1
-            if col_index <= len(col):
-                continue
-            else:
-                break
     return ret, outdf
 
 
@@ -237,7 +234,7 @@ def rule_applier(indf, iny, over_y, rules):
 
     over_y += [x for x in indexes if not np.isnan(iny[x])]
 
-    iny[indexes] = rule['class']
+    iny[indexes] = rules['class']
     return iny, over_y
 
 
@@ -250,30 +247,16 @@ def column_translator(in_df, target_var, col_number_list):
   ret = [v for i, v in enumerate(df_columns) if i in col_number_list]
   return ret
 
-# Main code
-parameters = pd.read_csv('datasets-UCI/Used_data/summary_new.csv')
-dataset_par = parameters.iloc[8]
-print('--------------------------------------------------')
-print(dataset_par['dataset'])
-print('--------------------------------------------------')
-label_col = 'class'
 
-X_train_list, X_test_list, y_train_list, y_test_list, discrete_attributes, continuous_attributes = dataset_uploader(dataset_par,
-                                                                                                                    'datasets-UCI/new_datasets/',
-                                                                                                                    apply_smothe=False)
-discrete_attributes = column_translator(X_train_list[0], label_col, discrete_attributes)
-continuous_attributes = column_translator(X_train_list[0], label_col, continuous_attributes)
-metric_list = []
-for ix in range(len(X_train_list)):
-    X_train = X_train_list[ix]
-    X_test = X_test_list[ix]
-    y_train = y_train_list[ix]
-    y_test = y_test_list[ix]
-    model = load_model('trained_models/trained_model_' + dataset_par['dataset'] + '_' + str(ix) + '.h5')
+def refne_run(X_train, X_test, y_train, y_test, discrete_attributes, continuous_attributes, label_col, dataset_par,
+              model):
+
+    discrete_attributes = column_translator(X_train, label_col, discrete_attributes)
+    continuous_attributes = column_translator(X_train, label_col, continuous_attributes)
     synth_samples = X_train.shape[0] * 2
     xSynth = synthetic_data_generator(X_train, synth_samples)
     ySynth = np.argmax(model.predict(xSynth), axis=1)
-    classes = np.unique(np.concatenate((y_train, y_test), axis=0)).tolist()
+    n_class = dataset_par['classes']
 
     # Discretising the continuous attributes
     attr_list = xSynth.columns.tolist()
@@ -281,7 +264,6 @@ for ix in range(len(X_train_list)):
     interv_dict = {}
     for attr in attr_list:
         if attr in continuous_attributes:
-            print(attr)
             interv = interval_definer(data=xSynth, attr=attr, label=label_col)
             xSynth[attr] = discretizer(xSynth[attr], interv)
             interv_dict[attr] = interv
@@ -291,13 +273,13 @@ for ix in range(len(X_train_list)):
 
     final_rules = []
     if len(discrete_attributes) > 0:
-        out_rule, discreteSynth = rule_maker(xSynth, interv_dict, discrete_attributes, label_col)
+        out_rule, discreteSynth = rule_maker(xSynth, interv_dict, discrete_attributes, label_col, model)
         final_rules += out_rule
         if len(final_rules) == 0 or len(discreteSynth) > 0:
-            out_rule, discreteSynth = rule_maker(discreteSynth, interv_dict, continuous_attributes, label_col)
+            out_rule, discreteSynth = rule_maker(discreteSynth, interv_dict, continuous_attributes, label_col, model)
             final_rules += out_rule
     else:
-        out_rule, contSynth = rule_maker(xSynth, interv_dict, continuous_attributes, label_col)
+        out_rule, contSynth = rule_maker(xSynth, interv_dict, continuous_attributes, label_col, model)
         final_rules += out_rule
 
     print(final_rules)
@@ -322,15 +304,14 @@ for ix in range(len(X_train_list)):
 
     avg_length = sum([len(item['neuron']) for item in final_rules]) / len(final_rules)
     completeness = sum(~np.isnan(rule_labels)) / num_test_examples
-    rule_labels[np.where(np.isnan(rule_labels))] = max(classes) + 10
-    perturbed_labels[np.where(np.isnan(perturbed_labels))] = max(classes) + 10
+    rule_labels[np.where(np.isnan(rule_labels))] = n_class + 10
+    perturbed_labels[np.where(np.isnan(perturbed_labels))] = n_class + 10
     overlap = len(set(overlap)) / len(X_test)
 
-    metric_list.append(rule_metrics_calculator(num_test_examples, y_test, rule_labels, predicted_labels,
-                                               perturbed_labels, len(final_rules), completeness, avg_length,
-                                               overlap, dataset_par['classes'])
-                       )
+    return rule_metrics_calculator(num_test_examples, y_test, rule_labels, predicted_labels,
+                                   perturbed_labels, len(final_rules), completeness, avg_length,
+                                   overlap, dataset_par['classes']
+                                   )
 
-pd.DataFrame(metric_list, columns=['complete', 'correctness', 'fidelity', 'robustness', 'rule_n', 'avg_length',
-                                   'overlap', 'class_fraction']
-             ).to_csv('refne_metrics_' + dataset_par['dataset'] + '.csv')
+
+

@@ -5,44 +5,15 @@ from keras.optimizers import SGD, Adagrad, Adam, Nadam, RMSprop
 import numpy as np
 from sklearn.metrics import accuracy_score
 import copy
-from common_functions import perturbator, model_train, dataset_uploader, create_model, rule_metrics_calculator
+from common_functions import perturbator, rule_metrics_calculator
 import dictlib
 from sklearn.model_selection import train_test_split
-from rxren_rxncn_functions import rule_pruning, rule_elicitation, ruleset_accuracy, rule_size_calculator
+from rxren_rxncn_functions import rule_pruning, rule_elicitation, ruleset_accuracy, rule_size_calculator, input_delete
+from rxren_rxncn_functions import model_pruned_prediction, prediction_reshape
 import sys
-
-# np.random.seed(3)
-np.random.seed(1)
 
 
 # Functions
-def prediction_reshape(prediction_list):
-    if len(prediction_list.shape) > 1:
-        ret = np.argmax(prediction_list, axis=1)
-    else:
-        ret = np.reshape(prediction_list, -1).tolist()
-        ret = [round(x) for x in ret]
-    return ret
-
-
-def input_delete(insignificant_index, in_df, in_weight=None):
-    """
-    Delete the variable of the input vector corresponding the insignificant input neurons and, if required, the
-    corresponding weights of the neural network
-    :param insignificant_index:
-    :param in_df:
-    :param in_weight:
-    :return: the trimmed weights and input vector
-    """
-    out_df = copy.deepcopy(in_df)
-    out_df = np.delete(out_df, insignificant_index, 1)
-    out_weight = None
-    if in_weight is not None:
-        out_weight = copy.deepcopy(in_weight)
-        out_weight[0] = np.delete(out_weight[0], insignificant_index, 0)
-    return out_df, out_weight
-
-
 def prediction_classifier(orig_y, predict_y, comparison="misclassified"):
     ret = {}
     out_classes = np.unique(orig_y)
@@ -51,26 +22,6 @@ def prediction_classifier(orig_y, predict_y, comparison="misclassified"):
             ret[cls] = [i for i in range(len(orig_y)) if predict_y[i] != orig_y[i] and orig_y[i] == cls]
         else:
             ret[cls] = [i for i in range(len(orig_y)) if predict_y[i] == orig_y[i] and orig_y[i] == cls]
-    return ret
-
-
-def model_pruned_prediction(insignificant_index, in_df, in_item, in_weight=None):
-    """
-    Calculate the output classes predicted by the pruned model.
-    :param insignificant_index: list of the indexes of insignificant input neurons
-    :param in_df: input dataframe including independent variables
-    :param in_item: hype-parameters of the model
-    :param in_weight: weight of trained model
-    :return: numpy array with the output classes predicted by the pruned model
-    """
-    input_x, w = input_delete(insignificant_index, in_df, in_weight=in_weight)
-    new_m = create_model(input_x, in_item['classes'], in_item['neurons'], in_item['optimizer'],
-                         in_item['init_mode'], in_item['activation'], in_item['dropout_rate'],
-                         in_item['weight_constraint'], loss='categorical_crossentropy',
-                         out_activation='softmax')
-    new_m.set_weights(w)
-    ret = new_m.predict(input_x)
-    ret = prediction_reshape(ret)
     return ret
 
 
@@ -188,26 +139,9 @@ def rule_evaluator(x, y, rule_dict, orig_acc, class_list):
     return ret
 
 
-# Main code
-
-# Loading dataset
-# Alpha is set equal to the percentage of input instances belonging to the least-represented class in the dataset
-alpha = 0.1
-train_model = False
-parameters = pd.read_csv('datasets-UCI/Used_data/summary_new.csv')
-dataset_par = parameters.iloc[15]
-print('--------------------------------------------------')
-print(dataset_par['dataset'])
-print('--------------------------------------------------')
-
-MODEL_NAME = 'trained_model_' + dataset_par['dataset'] + '.h5'
-X_train_list, X_test_list, y_train_list, y_test_list, _, _ = dataset_uploader(dataset_par, apply_smothe=False)
-metric_list = []
-for ix in range(len(X_train_list)):
-    X_train = X_train_list[ix]
-    X_test = X_test_list[ix]
-    y_train = y_train_list[ix]
-    y_test = y_test_list[ix]
+def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model):
+    # Alpha is set equal to the percentage of input instances belonging to the least-represented class in the dataset
+    alpha = 0.1
     X_test, X_val, y_test, y_val = train_test_split(X_test, y_test, test_size=0.33)
 
     column_lst = X_train.columns.tolist()
@@ -217,22 +151,8 @@ for ix in range(len(X_train_list)):
     X_train, X_test, X_val = X_train.to_numpy(), X_test.to_numpy(), X_val.to_numpy()
     n_classes = dataset_par['classes']
 
-    if train_model:
-        model = create_model(X_train, dataset_par['classes'], dataset_par['neurons'], eval(dataset_par['optimizer']),
-                             dataset_par['init_mode'], dataset_par['activation'], dataset_par['dropout_rate'],
-                             weight_constraint=eval(dataset_par['weight_constraint']), loss='binary_crossentropy',
-                             out_activation='sigmoid'
-                             )
-        model_train(X_train, to_categorical(y_train, num_classes=dataset_par['classes']),
-                    X_test, to_categorical(y_test, num_classes=dataset_par['classes']), model, MODEL_NAME,
-                    n_epochs=dataset_par['epochs'], batch_size=dataset_par['batch_size']
-                    )
-    else:
-        model = load_model('trained_models/trained_model_' + dataset_par['dataset'] + '_' + str(ix) + '.h5')
-
-    # model = load_model(MODEL_NAME)
     weights = np.array(model.get_weights())
-    results = prediction_reshape(model.predict_classes(X_train))
+    results = model.predict_classes(X_train)
 
     # This will be used for calculating the final metrics
     predicted_labels = prediction_reshape(model.predict(X_test))
@@ -285,21 +205,12 @@ for ix in range(len(X_train_list)):
             perturbed_labels, _ = rule_elicitation(perturbed_data, perturbed_labels, rule, key)
 
         perturbed_labels[np.where(np.isnan(perturbed_labels))] = n_classes + 10
-
         completeness = sum(~np.isnan(rule_labels)) / num_test_examples
-
         avg_length, number_rules = rule_size_calculator(final_rules)
-
         overlap = len(set(overlap)) / len(X_test)
-
-        metric_list.append(rule_metrics_calculator(num_test_examples, y_test, rule_labels, predicted_labels,
-                                                   perturbed_labels, number_rules, completeness, avg_length,
-                                                   overlap, dataset_par['classes']
-                                                   )
-                           )
+        return rule_metrics_calculator(num_test_examples, y_test, rule_labels, predicted_labels,
+                                       perturbed_labels, number_rules, completeness, avg_length,
+                                       overlap, dataset_par['classes']
+                                       )
     else:
-        metric_list.append(np.zeros(8).tolist())
-
-pd.DataFrame(metric_list, columns=['complete', 'correctness', 'fidelity', 'robustness', 'rule_n', 'avg_length',
-                                   'overlap', 'class_fraction']
-             ).to_csv('rxncn_metrics_' + dataset_par['dataset'] + '.csv')
+        return np.zeros(8).tolist()

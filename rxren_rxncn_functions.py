@@ -1,5 +1,52 @@
 from sklearn.metrics import accuracy_score
 import numpy as np
+import copy
+from common_functions import create_model
+
+
+def prediction_reshape(prediction_list):
+    if len(prediction_list[0]) > 1:
+        ret = np.argmax(prediction_list, axis=1)
+    else:
+        ret = np.reshape(prediction_list, -1).tolist()
+        ret = [round(x) for x in ret]
+    return ret
+
+
+def input_delete(insignificant_index, in_df, in_weight=None):
+    """
+    Delete the variable of the input vector corresponding the insignificant input neurons and, if required, the
+    corresponding weights of the neural network
+    :param insignificant_index:
+    :param in_df:
+    :param in_weight:
+    :return: the trimmed weights and input vector
+    """
+    out_df = copy.deepcopy(in_df)
+    out_df = np.delete(out_df, insignificant_index, 1)
+    out_weight = None
+    if in_weight is not None:
+        out_weight = copy.deepcopy(in_weight)
+        out_weight[0] = np.delete(out_weight[0], insignificant_index, 0)
+    return out_df, out_weight
+
+
+def model_pruned_prediction(insignificant_index, in_df, in_item, in_weight=None):
+    """
+    Calculate the output classes predicted by the pruned model.
+    :param insignificant_index: list of the insignificant input features
+    :param in_df: input instances to be classified by the model
+    :param in_item: list of model's hyper-parameters
+    :param in_weight: model's weights
+    :return: numpy array with the output classes predicted by the pruned model
+    """
+    input_x, w = input_delete(insignificant_index, in_df, in_weight=in_weight)
+    new_m = create_model(input_x, in_item['classes'], in_item['neurons'], in_item['optimizer'],
+                         in_item['init_mode'], in_item['activation'], in_item['dropout_rate'])
+    new_m.set_weights(w)
+    ret = new_m.predict(input_x)
+    ret = prediction_reshape(ret)
+    return ret
 
 
 def rule_pruning(train_x, train_y, rule_set, classes_n):

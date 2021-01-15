@@ -96,49 +96,9 @@ def get_node_depths(tree):
     return np.array(depths)
 
 
-def run_c45_pane(x_tot, y_tot, x_test):
-    clf = DecisionTreeClassifier()
-    clf = clf.fit(x_tot, y_tot)
-
-    rules = export_text(clf)
-    string_data = export_graphviz(clf, out_file=None)
-
-    # Showing the rules
-    print_decision_tree(clf)
-    # print(rules)
-    # print(string_data)
-
-    predicted_labels = clf.predict(x_test)
-    if original_study:
-        model_test_labels = ensemble_predictions(members, x_test)[0]
-    else:
-        model_test_labels = np.argmax(model.predict(x_test), axis=1)
-
-    perturbed_data = perturbator(x_test)
-    perturbed_labels = clf.predict(perturbed_data)
-
-    num_test_examples = x_test.shape[0]
-    completeness = len(predicted_labels) / num_test_examples
-    depths = get_node_depths(clf.tree_)
-    overlap = 0
-
-    ret = rule_metrics_calculator(num_test_examples, y_test, predicted_labels, model_test_labels, perturbed_labels,
-                                  clf.get_n_leaves(), completeness, np.mean(depths), overlap, dataset_par['classes'])
-    return ret
-
-
-# Main code
-parameters = pd.read_csv('datasets-UCI/Used_data/summary_new.csv')
-# Global variables
-original_study = False
-if original_study:
+def run_c45_pane_old(X_train, X_test, y_train, y_test, dataset_par):
     n_members = 10
     for member in range(n_members):
-        X_train, X_test, y_train, y_test, _, _ = dataset_uploader(dataset_par, apply_smothe=False)
-        X_train = X_train[0]
-        X_test = X_test[0]
-        y_train = y_train[0]
-        y_test = y_test[0]
         # define model
         model = create_model(X_train, dataset_par['classes'], dataset_par['neurons'], eval(dataset_par['optimizer']),
                              dataset_par['init_mode'], dataset_par['activation'], dataset_par['dropout_rate'],
@@ -146,7 +106,7 @@ if original_study:
                              )
         model_train(X_train, to_categorical(y_train, num_classes=dataset_par['classes']),
                     X_test, to_categorical(y_test, num_classes=dataset_par['classes']), model,
-                    'c45_model_'+str(member)+'.h5', n_epochs=dataset_par['epochs'],
+                    'c45_model_' + str(member) + '.h5', n_epochs=dataset_par['epochs'],
                     batch_size=dataset_par['batch_size'])
 
     X = pd.concat([X_train, X_test], ignore_index=True)
@@ -166,30 +126,41 @@ if original_study:
     # Concatenate the synthetic array and the array with the labels predicted by the ensemble
     xTot = np.concatenate((X, xSynth), axis=0)
     yTot = np.transpose(np.concatenate([ensemble_res, ySynth], axis=1))
-else:
-    metric_list = []
-    for ix in range(len(parameters)):
-        dataset_par = parameters.iloc[ix]
-        X_train_list, X_test_list, y_train_list, y_test_list, _, _ = dataset_uploader(dataset_par, apply_smothe=False)
-        print('--------------------------------------------------')
-        print(dataset_par['dataset'])
-        print('--------------------------------------------------')
-        X_train = X_train_list[ix]
-        X_test = X_test_list[ix]
-        y_train = y_train_list[ix]
-        y_test = y_test_list[ix]
-        X_train, X_test = X_train.to_numpy(), X_test.to_numpy()
-        model = load_model('trained_model_' + dataset_par['dataset'] + '_' + str(ix) + '.h5')
-        synth_samples = X_train.shape[0] * 2
-        xSynth = synthetic_data_generator(X_train, synth_samples)
-        ySynth = np.argmax(model.predict(xSynth), axis=1)
-        model_res = np.argmax(model.predict(X_train), axis=1)
-        xTot = np.concatenate((X_train, xSynth), axis=0)
-        yTot = np.transpose(np.concatenate([model_res, ySynth], axis=0))
-        metric_list.append(run_c45_pane(xTot, yTot, X_test))
+    return xTot, yTot
 
-    pd.DataFrame(metric_list, columns=['complete', 'correctness', 'fidelity', 'robustness', 'rule_n', 'avg_length',
-                                       'overlap', 'class_fraction']
-                 ).to_csv('c45_metrics.csv')
-# This uses the CART algorithm (see https://scikit-learn.org/stable/modules/tree.html)
+
+def run_c45_pane(X_train, X_test, y_test, dataset_par, model):
+    X_train, X_test = X_train.to_numpy(), X_test.to_numpy()
+    synth_samples = X_train.shape[0] * 2
+    xSynth = synthetic_data_generator(X_train, synth_samples)
+    ySynth = np.argmax(model.predict(xSynth), axis=1)
+    model_res = np.argmax(model.predict(X_train), axis=1)
+    x_tot = np.concatenate((X_train, xSynth), axis=0)
+    y_tot = np.transpose(np.concatenate([model_res, ySynth], axis=0))
+
+    clf = DecisionTreeClassifier()
+    clf = clf.fit(x_tot, y_tot)
+
+    rules = export_text(clf)
+    string_data = export_graphviz(clf, out_file=None)
+
+    # Showing the rules
+    # print_decision_tree(clf)
+    # print(rules)
+    # print(string_data)
+
+    predicted_labels = clf.predict(X_test)
+    model_test_labels = np.argmax(model.predict(X_test), axis=1)
+
+    perturbed_data = perturbator(X_test)
+    perturbed_labels = clf.predict(perturbed_data)
+
+    num_test_examples = X_test.shape[0]
+    completeness = len(predicted_labels) / num_test_examples
+    depths = get_node_depths(clf.tree_)
+    overlap = 0
+
+    ret = rule_metrics_calculator(num_test_examples, y_test, predicted_labels, model_test_labels, perturbed_labels,
+                                  clf.get_n_leaves(), completeness, np.mean(depths), overlap, dataset_par['classes'])
+    return ret
 

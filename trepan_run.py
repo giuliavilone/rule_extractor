@@ -1,49 +1,11 @@
-import pandas as pd
-from keras.utils import to_categorical
 from keras.optimizers import SGD, Adagrad, Adam, Nadam
 import numpy as np
-from common_functions import create_model, model_train, perturbator, dataset_uploader, rule_metrics_calculator
+from common_functions import perturbator, rule_metrics_calculator
 from trepan import Tree, Oracle
-from keras.models import load_model
-import time
-import sys
 
 
-def main():
-    # Main code
-    parameters = pd.read_csv('datasets-UCI/Used_data/summary.csv')
-    path = 'datasets-UCI/Used_data/'
-    dataset_par = parameters.iloc[11]
-    print('--------------------------------------------------')
-    print(dataset_par['dataset'])
-    print('--------------------------------------------------')
-    original_study = True
-    if original_study:
-        X_train, X_test, y_train, y_test, discrete_list, _ = dataset_uploader(dataset_par, path)
-        X_train = X_train[0]
-        X_test = X_test[0]
-        y_train = y_train[0]
-        y_test = y_test[0]
-        X_train, X_test = X_train.to_numpy(), X_test.to_numpy()
-        model = create_model(X_train, dataset_par['classes'], dataset_par['neurons'], eval(dataset_par['optimizer']),
-                             dataset_par['init_mode'], dataset_par['activation'], dataset_par['dropout_rate'],
-                             weight_constraint=eval(dataset_par['weight_constraint'])
-                             )
-        model_train(X_train, to_categorical(y_train, num_classes=dataset_par['classes']),
-                    X_test, to_categorical(y_test, num_classes=dataset_par['classes']), model,
-                    'trepan_model.h5', n_epochs=dataset_par['epochs'], batch_size=dataset_par['batch_size'])
-    else:
-        X_train_list, X_test_list, y_train_list, y_test_list, discrete_list, _ = dataset_uploader(dataset_par, path,
-                                                                                                  apply_smothe=False)
-        metric_list = []
-        for ix in range(len(X_train_list)):
-            X_train = X_train_list[ix]
-            X_test = X_test_list[ix]
-            y_train = y_train_list[ix]
-            y_test = y_test_list[ix]
-            # X_train, X_test = X_train.to_numpy(), X_test.to_numpy()
-            model = load_model('trained_model_' + dataset_par['dataset'] + '_' + str(ix) + '.h5')
-
+def run_trepan(X_train, X_test, y_train, y_test, discrete_list, dataset_par, model):
+    X_train, X_test = X_train.to_numpy(), X_test.to_numpy()
     n_class = dataset_par['classes']
 
     oracle = Oracle(model, n_class, X_train, discrete_list)
@@ -77,12 +39,7 @@ def main():
     avg_length = sum(final_rules) / len(final_rules)
     overlap = 0
 
-    metric_list = rule_metrics_calculator(num_test_examples, y_test, rule_labels, predi_torch, perturbed_labels,
-                                          len(final_rules), completeness, avg_length, overlap,
-                                          dataset_par['classes'])
+    return rule_metrics_calculator(num_test_examples, y_test, rule_labels, predi_torch, perturbed_labels,
+                                   len(final_rules), completeness, avg_length, overlap, dataset_par['classes']
+                                   )
 
-
-if __name__ == "__main__":
-    start_time = time.time()
-    main()
-    print("--- %s seconds ---" % (time.time() - start_time))
