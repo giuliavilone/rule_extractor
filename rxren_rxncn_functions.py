@@ -75,13 +75,13 @@ def rule_pruning(train_x, train_y, rule_set, classes_n):
     return ret, orig_acc
 
 
-def rule_elicitation(x, pred_y, rule_list, cls, over_y=None):
+def rule_elicitation(x, pred_y, rule_list, cls):
+    over_y = np.zeros(len(pred_y))
     for item in rule_list:
         minimum = item['limits'][0]
         maximum = item['limits'][1]
-        if over_y is not None:
-            indexes = np.where((x[:, item['neuron']] >= minimum) * (x[:, item['neuron']] <= maximum))[0]
-            over_y += [x for x in indexes if not np.isnan(pred_y[x])]
+        indexes = np.where((x[:, item['neuron']] >= minimum) * (x[:, item['neuron']] <= maximum))[0]
+        over_y[indexes] = 1
         pred_y[(x[:, item['neuron']] >= minimum) * (x[:, item['neuron']] <= maximum)] = cls
     return pred_y, over_y
 

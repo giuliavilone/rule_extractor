@@ -11,6 +11,7 @@ from collections import Counter
 import random
 import copy
 import sys
+import itertools
 
 
 # Functions
@@ -78,19 +79,15 @@ def interval_definer(data, attr, label):
     :return:
     """
     out_df = copy.deepcopy(data[[attr, label]])
-    out_df = out_df.sort_values(by=[attr], ignore_index=True)
+    out_df = out_df.sort_values(by=[attr, label], ignore_index=True)
     out_df.drop_duplicates(inplace=True, ignore_index=True)
     changes = out_df[out_df[label].diff() != 0].index.tolist()
     values = out_df[attr].tolist()
-    intervals = [[values[changes[i]], values[changes[i+1]-1]] for i in range(len(changes) - 1)]
-    # Removing duplicate intervals as sometimes the same value is associated with multiple classes
-    to_be_deleted = []
-    for ix in range(len(intervals)-1):
-        if intervals[ix][0] == intervals[ix][1] and intervals[ix][1] == intervals[ix+1][0]:
-            to_be_deleted.append(ix)
-    to_be_deleted.reverse()
-    for item in to_be_deleted:
-        intervals.pop(item)
+    cvalues = sorted(list(set([values[changes[i]] for i in range(len(changes))])))
+    uvalues = sorted(list(set(values)))
+    intervals = [[cvalues[i], uvalues[uvalues.index(cvalues[i+1])-1]]for i in range(len(cvalues) - 1)]
+    intervals += [[values[changes[-1]], max(values)]]
+
     # It can happen that there are no changes at the extremes of the value ranges, so these values might not be
     # included in the list of intervals. Hence, it must be checked that the intervals cover the entire range,
     # otherwise they must be extended by adding the min and/or max values
@@ -155,7 +152,34 @@ def rule_evaluator(df, rule_columns, new_rule_set, out_var, model, fidelity=0.0)
     return new_rule_set
 
 
-def rule_maker(df, intervals, col, target_var, model):
+def column_combos(categorical_var=None, continuous_var=None):
+    """
+    This function returns the combinations of 1, 2 and 3 categorical, continuous and categorical & continuous input
+    variables to be analysed by the rule_maker function to generate the rules
+    :return:
+    """
+    out_list = []
+    if categorical_var is not None:
+        random.shuffle(categorical_var)
+        for col_number in range(min(3, len(categorical_var))):
+            out_list.append(list(itertools.combinations(categorical_var, col_number + 1)))
+        if continuous_var is not None:
+            random.shuffle(continuous_var)
+            all_columns = categorical_var + continuous_var
+            tmp_list = []
+            for cont_col_number in range(min(3, len(all_columns))):
+                tmp_list.append(list(itertools.combinations(all_columns, cont_col_number + 1)))
+            tmp_list = [item for item in tmp_list if item not in out_list]
+            out_list += tmp_list
+    elif continuous_var is not None:
+        random.shuffle(continuous_var)
+        for col_number in range(min(3, len(continuous_var))):
+            out_list.append(list(itertools.combinations(continuous_var, col_number + 1)))
+
+    return out_list
+
+
+def rule_maker(df, intervals, combo_list, target_var, model):
     """
     Creates the IF-THEN rules
     :param df: input dataframe
@@ -167,56 +191,39 @@ def rule_maker(df, intervals, col, target_var, model):
     """
     outdf = copy.deepcopy(df)
     # Randomly shuffling the attributes to be analysed
-    random.shuffle(col)
     ret = []
-    col_index = 0
-    while col_index < len(col):
-        item = col[col_index]
-        attr_list = outdf[[item, target_var]].groupby(item).agg(unique_class=(target_var, 'nunique'),
-                                                                max_class=(target_var, 'max')
-                                                                ).reset_index(drop=False)
-        new_rules = attr_list[attr_list['unique_class'] == 1]
-        if (len(new_rules) == 0) and (len(col) > 1):
-            item1 = select_random_item(col, [item])
-            attr_list = outdf[[item, item1, target_var]].groupby([item, item1]).agg(
-                unique_class=(target_var, 'nunique'),
-                max_class=(target_var, 'max')
-                ).reset_index(drop=False)
+    combo_number = 0
+    while len(ret) == 0 and combo_number < len(combo_list) and len(outdf) > 0:
+        combos = combo_list[combo_number]
+        for combo in combos:
+            attr_list = outdf[list(combo) + [target_var]].groupby(list(combo)).agg(unique_class=(target_var, 'nunique'),
+                                                                                   max_class=(target_var, max)
+                                                                                   ).reset_index(drop=False)
             new_rules = attr_list[attr_list['unique_class'] == 1]
-            if (len(new_rules) == 0) and (len(col) > 2):
-                item2 = select_random_item(col, [item, item1])
-                attr_list = outdf[[item, item1, item2, target_var]].groupby([item, item1, item2]).agg(
-                    unique_class=(target_var, 'nunique'),
-                    max_class=(target_var, 'max')
-                ).reset_index(drop=False)
-                new_rules = attr_list[attr_list['unique_class'] == 1]
-
-        if len(new_rules) > 0:
-            new_col = new_rules.columns.values.tolist()
-            new_col.remove('unique_class')
-            new_col.remove('max_class')
-            new_rules = rule_evaluator(outdf, new_col, new_rules, target_var, model, fidelity=0.7)
-            for index, row in new_rules.iterrows():
-                # Evaluate the fidelity of the new rule
-                new_dict = {'neuron': new_col, 'class': row['max_class'].tolist()}
-                rule_intervals = []
-                for c in new_col:
-                    interv = intervals[c]
-                    rule_int = [item for item in interv if item[0] == row[c]]
-                    x = outdf[c]
-                    ix = np.where((x < rule_int[0][0]) | (x > rule_int[0][1]))[0]
-                    outdf = outdf.iloc[ix]
-                    rule_intervals += rule_int
-                new_dict['limits'] = rule_intervals
-                ret.append(new_dict)
-            if len(ret) > 0:
-                break
-        else:
-            col_index += 1
-    return ret, outdf
+            if len(new_rules) > 0:
+                new_col = new_rules.columns.values.tolist()
+                new_col.remove('unique_class')
+                new_col.remove('max_class')
+                new_rules = rule_evaluator(outdf, new_col, new_rules, target_var, model, fidelity=0.5)
+                for index, row in new_rules.iterrows():
+                    # Evaluate the fidelity of the new rule
+                    new_dict = {'neuron': new_col, 'class': row['max_class'].tolist()}
+                    rule_intervals = []
+                    for c in new_col:
+                        interv = intervals[c]
+                        rule_int = [item for item in interv if item[0] == row[c]]
+                        x = outdf[c]
+                        # Selecting the indexes of the instances that are not covered by the rules
+                        ix = np.where((x < rule_int[0][0]) | (x > rule_int[0][1]))[0]
+                        outdf = outdf.iloc[ix]
+                        rule_intervals += rule_int
+                    new_dict['limits'] = rule_intervals
+                    ret.append(new_dict)
+        combo_number += 1
+    return ret
 
 
-def rule_applier(indf, iny, over_y, rules):
+def rule_applier(indf, iny, rules):
     """
     Apply the input rules to the list of labels iny according to the rule conditions on indf
     :param indf:
@@ -226,14 +233,15 @@ def rule_applier(indf, iny, over_y, rules):
     :return: iny
     """
     indexes = []
+    over_y = np.zeros(len(iny))
     for r in range(len(rules['neuron'])):
         x = indf[rules['neuron'][r]]
         if len(rules['limits']) > 0:
-            ix = np.where((x >= rules['limits'][r][0]) & (x <= rules['limits'][r][1]))[0]
-            indexes = [x for x in ix if x not in indexes]
+            ix = list(np.where((x >= rules['limits'][r][0]) & (x <= rules['limits'][r][1]))[0])
+            indexes += ix
 
-    over_y += [x for x in indexes if not np.isnan(iny[x])]
-
+    indexes = list(set(indexes))
+    over_y[indexes] = 1
     iny[indexes] = rules['class']
     return iny, over_y
 
@@ -253,6 +261,7 @@ def refne_run(X_train, X_test, y_train, y_test, discrete_attributes, continuous_
 
     discrete_attributes = column_translator(X_train, label_col, discrete_attributes)
     continuous_attributes = column_translator(X_train, label_col, continuous_attributes)
+    all_column_combos = column_combos(categorical_var=discrete_attributes, continuous_var=continuous_attributes)
     synth_samples = X_train.shape[0] * 2
     xSynth = synthetic_data_generator(X_train, synth_samples)
     ySynth = np.argmax(model.predict(xSynth), axis=1)
@@ -271,18 +280,9 @@ def refne_run(X_train, X_test, y_train, y_test, discrete_attributes, continuous_
             unique_values = np.unique(xSynth[attr]).tolist()
             interv_dict[attr] = [list(a) for a in zip(unique_values, unique_values)]
 
-    final_rules = []
-    if len(discrete_attributes) > 0:
-        out_rule, discreteSynth = rule_maker(xSynth, interv_dict, discrete_attributes, label_col, model)
-        final_rules += out_rule
-        if len(final_rules) == 0 or len(discreteSynth) > 0:
-            out_rule, discreteSynth = rule_maker(discreteSynth, interv_dict, continuous_attributes, label_col, model)
-            final_rules += out_rule
-    else:
-        out_rule, contSynth = rule_maker(xSynth, interv_dict, continuous_attributes, label_col, model)
-        final_rules += out_rule
+    final_rules = rule_maker(xSynth, interv_dict, all_column_combos, label_col, model)
 
-    print(final_rules)
+    #print(final_rules)
     # Calculation of metrics
     predicted_labels = np.argmax(model.predict(X_test), axis=1)
 
@@ -292,21 +292,23 @@ def refne_run(X_train, X_test, y_train, y_test, discrete_attributes, continuous_
     rule_labels[:] = np.nan
     perturbed_labels = np.empty(num_test_examples)
     perturbed_labels[:] = np.nan
-    overlap = []
+    overlap = np.zeros(num_test_examples)
 
     for rule in final_rules:
         neuron = X_test[rule['neuron']]
-        rule_labels, overlap = rule_applier(neuron, rule_labels, overlap, rule)
+        rule_labels, rule_overlap = rule_applier(neuron, rule_labels, rule)
+        overlap += rule_overlap
         p_neuron = perturbed_data[rule['neuron']]
-        perturbed_labels, overlap = rule_applier(p_neuron, rule_labels, overlap, rule)
+        perturbed_labels, _ = rule_applier(p_neuron, rule_labels, rule)
 
     y_test = y_test.tolist()
-
-    avg_length = sum([len(item['neuron']) for item in final_rules]) / len(final_rules)
+    if len(final_rules) > 0:
+        avg_length = sum([len(item['neuron']) for item in final_rules]) / len(final_rules)
+    else:
+        avg_length = 0
     completeness = sum(~np.isnan(rule_labels)) / num_test_examples
     rule_labels[np.where(np.isnan(rule_labels))] = n_class + 10
     perturbed_labels[np.where(np.isnan(perturbed_labels))] = n_class + 10
-    overlap = len(set(overlap)) / len(X_test)
 
     return rule_metrics_calculator(num_test_examples, y_test, rule_labels, predicted_labels,
                                    perturbed_labels, len(final_rules), completeness, avg_length,

@@ -10,14 +10,16 @@ from sklearn.preprocessing import LabelEncoder
 import sys
 
 
-def correlation_matrix_plot(in_corr_matrix, save_corr_matrix=False):
-    sns_plot = sn.heatmap(in_corr_matrix, annot=True)
-    plt.title(dataset_name, fontsize=14)
-    plt.xticks(rotation=18, horizontalalignment='right')
+def correlation_matrix_plot(in_corr_matrix, title, save_corr_matrix=False):
+    font_size = 18
+    sns_plot = sn.heatmap(in_corr_matrix, annot=True, annot_kws={"fontsize": 16})
+    plt.title(title, fontsize=14)
+    plt.xticks(rotation=18, horizontalalignment='right', fontsize=font_size)
+    plt.yticks(fontsize=font_size)
     plt.show()
     if save_corr_matrix:
         sns_plot = sns_plot.get_figure()
-        sns_plot.savefig(dataset_name + '.png')
+        sns_plot.savefig(title + '.png')
 
 
 def feature_selector(in_corr_matrix, high_correlated=True, threshold=0.5):
@@ -100,29 +102,61 @@ def data_importer(file_to_be_imported, file_name, remove_columns=True):
     return ret_df, ret_class
 
 
-path = "/home/d18126441/PycharmProjects/rule_extractor/datasets-UCI/new_datasets/*.csv"
+def metrics_importer(path_name):
+    """
+    Importing and appending the metrics of each dataset and collate into a single
+    :param path_name: path to the folder containing
+    :return tot_df: pandas dataframe containing the metrics of all the dataset under analysis
+    """
+    tot_df = pd.DataFrame()
+    for mx in glob.glob(path_name):
+        mx_df = pd.read_csv(mx)
+        mx_df.rename(columns={'Unnamed: 0': 'Dataset', 'avg_length': 'Average rule length',
+                              'class_fraction': 'Fraction of classes', 'rule_n': 'Number of rules',
+                              'complete': 'Completeness', 'correctness': 'Correctness', 'fidelity': 'Fidelity',
+                              'robustness': 'Robustness', 'overlap': 'Fraction overlap'
+                              }, inplace=True)
+        mx_df['Dataset'] = str(mx[63:-8])
+        tot_df = tot_df.append(mx_df, ignore_index=True)
 
-plot_matrix = True
-best_combination = False
-for filename in glob.glob(path):
-    dataset_name = filename[73:-4].replace("_", " ")
-    print(dataset_name)
-    df, out_class = data_importer(filename, dataset_name)
+    return tot_df
 
-    corr_matrix = df.corr().round(4)
-    if dataset_name in ('cover type', 'connect-4'):
-        # The cover type dataset has too many variables to be plotted in a single matrix. So here the function
-        # removes those that are weakly correlated with all the others and plots only those with
-        # some correlation values that are greater than 0.5
-        corr_matrix = feature_selector(corr_matrix)
-    elif dataset_name in ('diabetic data'):
-        corr_matrix = feature_selector(corr_matrix, threshold=0.3)
-    if plot_matrix:
-        correlation_matrix_plot(corr_matrix)
-    # Finding the best combination among the correlated variables
-    if best_combination:
-        new_matrix = feature_selector(corr_matrix, threshold=0.6)
-        if len(new_matrix) > 0:
-            high_corr_feat = new_matrix.columns.tolist()
-            best_feat = find_best_combination(df, out_class, high_corr_feat)
-            best_feat.to_csv('best_feat_' + dataset_name + '.csv')
+
+dataset_correlation = False
+if dataset_correlation:
+    path = "/home/d18126441/PycharmProjects/rule_extractor/datasets-UCI/new_datasets/*.csv"
+
+    plot_matrix = True
+    best_combination = False
+    for filename in glob.glob(path):
+        dataset_name = filename[73:-4].replace("_", " ")
+        print(dataset_name)
+        df, out_class = data_importer(filename, dataset_name)
+
+        corr_matrix = df.corr().round(4)
+        if dataset_name in ('cover type', 'connect-4'):
+            # The cover type dataset has too many variables to be plotted in a single matrix. So here the function
+            # removes those that are weakly correlated with all the others and plots only those with
+            # some correlation values that are greater than 0.5
+            corr_matrix = feature_selector(corr_matrix)
+        elif dataset_name in ('diabetic data'):
+            corr_matrix = feature_selector(corr_matrix, threshold=0.3)
+        if plot_matrix:
+            correlation_matrix_plot(corr_matrix, dataset_name)
+        # Finding the best combination among the correlated variables
+        if best_combination:
+            new_matrix = feature_selector(corr_matrix, threshold=0.6)
+            if len(new_matrix) > 0:
+                high_corr_feat = new_matrix.columns.tolist()
+                best_feat = find_best_combination(df, out_class, high_corr_feat)
+                best_feat.to_csv('best_feat_' + dataset_name + '.csv')
+
+metrics_correlation = True
+if metrics_correlation:
+    path = '/home/d18126441/PycharmProjects/rule_extractor/metrics/*.csv'
+    metrics_df = metrics_importer(path)
+    metrics_df.to_csv('metrics.csv')
+    print(metrics_df)
+    corr_matrix = metrics_df.corr().round(4)
+    print(corr_matrix)
+    correlation_matrix_plot(corr_matrix, '', save_corr_matrix=False)

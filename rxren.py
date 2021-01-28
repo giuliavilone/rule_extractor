@@ -175,15 +175,17 @@ def rxren_run(X_train, X_test, y_train, y_test, dataset_par, model):
     rule_labels[:] = np.nan
     perturbed_labels = np.empty(num_test_examples)
     perturbed_labels[:] = np.nan
-    overlap = []
+    overlap = np.zeros(num_test_examples)
     for key, rule in final_rules.items():
-        rule_labels, overlap = rule_elicitation(X_test, rule_labels, rule, key, over_y=overlap)
+        rule_labels, rule_overlap = rule_elicitation(X_test, rule_labels, rule, key)
+        overlap += rule_overlap
         perturbed_labels, _ = rule_elicitation(perturbed_data, perturbed_labels, rule, key)
 
     perturbed_labels[np.where(np.isnan(perturbed_labels))] = n_classes + 10
     completeness = sum(~np.isnan(rule_labels)) / num_test_examples
     avg_length, number_rules = rule_size_calculator(final_rules)
-    overlap = len(set(overlap)) / len(X_test)
+    rule_labels[np.where(np.isnan(rule_labels))] = n_classes + 10
+    print("Rule labels: ", rule_labels)
     return rule_metrics_calculator(num_test_examples, y_test, rule_labels, predicted_labels,
                                    perturbed_labels, number_rules,
                                    completeness, avg_length, overlap, dataset_par['classes']

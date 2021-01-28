@@ -160,6 +160,7 @@ def rule_metrics_calculator(num_examples, y_test, rule_labels, model_labels, per
     print("Robustness of the ruleset is: " + str(robustness))
     print("Number of rules : " + str(rule_n))
     print("Average rule length: " + str(avg_length))
+    overlap = sum(overlap) / (rule_n * num_examples)
     print("Fraction overlap: " + str(overlap))
     labels_considered = set(rule_labels)
     labels_considered.discard(n_classes + 10)

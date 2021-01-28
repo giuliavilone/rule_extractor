@@ -8,6 +8,7 @@ from rxren import rxren_run
 from trepan_run import run_trepan
 import sys
 
+
 parameters = pd.read_csv('datasets/summary_new2.csv')
 label_col = 'class'
 
@@ -32,8 +33,8 @@ for df in range(len(parameters)):
     metric_list.append(['REFNE'] + metric_refne)
 
     print('---------------------- Working on C45 PANE -----------------------')
-    metric_c45 = run_c45_pane(X_train, X_test, y_test, dataset_par, model)
-    metric_list.append(['C45 PANE'] + metric_c45)
+    #metric_c45 = run_c45_pane(X_train, X_test, y_test, dataset_par, model)
+    #metric_list.append(['C45 PANE'] + metric_c45)
 
     print('---------------------- Working on RXNCN -----------------------')
     metric_rxncn = rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model)
@@ -44,8 +45,8 @@ for df in range(len(parameters)):
     metric_list.append(['RXREN'] + metric_rxren)
 
     print('---------------------- Working on TREPAN -----------------------')
-    metric_trepan = run_trepan(X_train, X_test, y_train, y_test, discrete_attributes, dataset_par, model)
-    metric_list.append(['TREPAN'] + metric_trepan)
+    #metric_trepan = run_trepan(X_train, X_test, y_train, y_test, discrete_attributes, dataset_par, model)
+    #metric_list.append(['TREPAN'] + metric_trepan)
 
     pd.DataFrame(metric_list, columns=['method', 'complete', 'correctness', 'fidelity', 'robustness', 'rule_n',
                                        'avg_length', 'overlap', 'class_fraction']
