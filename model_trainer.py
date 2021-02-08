@@ -58,7 +58,7 @@ def model_creator(item, target_var='class', cross_split=5, remove_columns=True):
                           'shuttle': ['S7', 'S8', 'S9']
                           }
     le = LabelEncoder()
-    dataset = pd.read_csv('datasets-UCI/new_datasets/' + item['dataset'] + '.csv')
+    dataset = pd.read_csv('datasets-UCI/UCI_csv/' + item['dataset'] + '.csv')
     dataset = dataset.dropna().reset_index(drop=True)
     if remove_columns and item['dataset'] in feat_to_be_deleted.keys():
         columns_to_be_deleted = [col for col in dataset.columns.tolist() if col in feat_to_be_deleted[item['dataset']]]
@@ -95,8 +95,8 @@ def model_creator(item, target_var='class', cross_split=5, remove_columns=True):
     return ret
 
 
-parameters = pd.read_csv('datasets-UCI/new_datasets/summary_new2.csv')
-dataset_par = parameters.iloc[4]
+parameters = pd.read_csv('datasets-UCI/UCI_csv/summary.csv')
+dataset_par = parameters.iloc[0]
 print('--------------------------------------------------')
 print(dataset_par['dataset'])
 print('--------------------------------------------------')

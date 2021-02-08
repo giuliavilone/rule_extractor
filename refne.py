@@ -1,13 +1,9 @@
 import pandas as pd
-from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import accuracy_score
-from keras.utils import to_categorical
 from keras.models import load_model
 from keras.optimizers import SGD, Adagrad, Adam, Nadam
 import numpy as np
 from common_functions import perturbator, ensemble_predictions, dataset_uploader
 from common_functions import rule_metrics_calculator
-from collections import Counter
 import random
 import copy
 import sys
@@ -82,19 +78,19 @@ def interval_definer(data, attr, label):
     out_df = out_df.sort_values(by=[attr, label], ignore_index=True)
     out_df.drop_duplicates(inplace=True, ignore_index=True)
     changes = out_df[out_df[label].diff() != 0].index.tolist()
+    cvalues = sorted(list(set(out_df[out_df.index.isin(changes)][attr])))
+    all_values = sorted(list(set(out_df[attr])))
+    intervals = [[cvalues[i], all_values[all_values.index(cvalues[i+1])-1]]for i in range(len(cvalues) - 1)]
     values = out_df[attr].tolist()
-    cvalues = sorted(list(set([values[changes[i]] for i in range(len(changes))])))
-    uvalues = sorted(list(set(values)))
-    intervals = [[cvalues[i], uvalues[uvalues.index(cvalues[i+1])-1]]for i in range(len(cvalues) - 1)]
     intervals += [[values[changes[-1]], max(values)]]
 
     # It can happen that there are no changes at the extremes of the value ranges, so these values might not be
     # included in the list of intervals. Hence, it must be checked that the intervals cover the entire range,
     # otherwise they must be extended by adding the min and/or max values
-    if intervals[-1][1] < max(values):
-        intervals.append([intervals[-1][1], max(values)])
-    if intervals[0][0] > min(values):
-        intervals.append([min(values), intervals[0][0]])
+    if intervals[-1][1] < max(all_values):
+        intervals.append([intervals[-1][1], max(all_values)])
+    if intervals[0][0] > min(all_values):
+        intervals.append([min(all_values), intervals[0][0]])
     return intervals
 
 
@@ -122,30 +118,22 @@ def select_random_item(int_list, ex_item_list):
     return new_item
 
 
-def rule_evaluator(df, rule_columns, new_rule_set, out_var, model, fidelity=0.0):
+def rule_evaluator(df, rule_columns, new_rule_set, out_var, model, n_samples, fidelity=0.0):
     """
     Evaluate the fidelity of the new rule
     :param new_rule_set:
     :return: boolean (true, false)
     """
-    n_samples = len(df)
-    all_columns = df.columns.values.tolist()
-    # Creating synthetics data within the limits set by the rule under evaluation
-    eval_df = df[rule_columns]
-    eval_df = eval_df.merge(new_rule_set[rule_columns], on=rule_columns)
-    eval_df = synthetic_data_generator(eval_df, n_samples)
-    # Adding synthetics data on the columns that are not considered by the rule under evaluation
-    all_columns.remove(out_var)
-    all_columns = [i for i in all_columns if i not in rule_columns]
-    other_df = df[all_columns]
-    tot_df = pd.concat([eval_df, other_df], axis=1).reset_index(drop=True)
+    # Creating synthetics data. As the input df does not contain the instances covered by the previous rules,
+    # the new instances are not covered by old rules
+    tot_df = synthetic_data_generator(df, n_samples)
     tot_df[out_var] = np.argmax(model.predict(tot_df), axis=1)
     tot_df = tot_df.merge(new_rule_set, on=rule_columns)
     tot_df = tot_df.drop(columns=['unique_class'])
-    tot_df = tot_df.drop(columns=all_columns)
     tot_df['same'] = [1 if tot_df['class'].iloc[i] == tot_df['max_class'].iloc[i] else 0 for i in range(len(tot_df))]
     group_df = tot_df.groupby(rule_columns).agg(total=('same', 'sum'),
                                                 frequency=('same', 'count')).reset_index(drop=False)
+
     group_df['fidelity'] = group_df['total'] / group_df['frequency']
     out_df = group_df[group_df['fidelity'] >= fidelity]
     new_rule_set = new_rule_set.merge(out_df[rule_columns], on=rule_columns)
@@ -179,10 +167,31 @@ def column_combos(categorical_var=None, continuous_var=None):
     return out_list
 
 
-def rule_maker(df, intervals, combo_list, target_var, model):
+def instance_remover(rule, df, column):
+    df = pd.merge(df, rule[column], how='outer', indicator=True)
+    df = df.loc[df._merge == 'left_only']
+    df = df.drop('_merge', axis=1)
+    df = df.reset_index(drop=True)
+    return df
+
+
+def instance_replacer(rule, df, column):
+    # Selecting the indexes of the instances that are not covered by the rules
+    unchanged_df = instance_remover(rule, df, column)
+    changed_df = pd.merge(df, rule[column])
+    n_samples = len(changed_df)
+    for c in column:
+        unique_value = list(set(unchanged_df[c]))
+        changed_df[c] = list(np.random.choice(unique_value, n_samples))
+    df = pd.concat([changed_df, unchanged_df], ignore_index=True)
+    return df
+
+
+def rule_maker(df, x_train, intervals, combo_list, target_var, model):
     """
     Creates the IF-THEN rules
     :param df: input dataframe
+    :param x_train: training dataset
     :param intervals: list of intervals to build the rules
     :param col: list of attributes to be analysed
     :param target_var: name of dependent variable
@@ -190,10 +199,11 @@ def rule_maker(df, intervals, combo_list, target_var, model):
     :return: outdf
     """
     outdf = copy.deepcopy(df)
+    new_x_train = copy.deepcopy(x_train)
     # Randomly shuffling the attributes to be analysed
     ret = []
     combo_number = 0
-    while len(ret) == 0 and combo_number < len(combo_list) and len(outdf) > 0:
+    while combo_number < len(combo_list) and len(outdf) > 0:
         combos = combo_list[combo_number]
         for combo in combos:
             attr_list = outdf[list(combo) + [target_var]].groupby(list(combo)).agg(unique_class=(target_var, 'nunique'),
@@ -204,21 +214,20 @@ def rule_maker(df, intervals, combo_list, target_var, model):
                 new_col = new_rules.columns.values.tolist()
                 new_col.remove('unique_class')
                 new_col.remove('max_class')
-                new_rules = rule_evaluator(outdf, new_col, new_rules, target_var, model, fidelity=0.5)
-                for index, row in new_rules.iterrows():
-                    # Evaluate the fidelity of the new rule
-                    new_dict = {'neuron': new_col, 'class': row['max_class'].tolist()}
-                    rule_intervals = []
-                    for c in new_col:
-                        interv = intervals[c]
-                        rule_int = [item for item in interv if item[0] == row[c]]
-                        x = outdf[c]
-                        # Selecting the indexes of the instances that are not covered by the rules
-                        ix = np.where((x < rule_int[0][0]) | (x > rule_int[0][1]))[0]
-                        outdf = outdf.iloc[ix]
-                        rule_intervals += rule_int
-                    new_dict['limits'] = rule_intervals
-                    ret.append(new_dict)
+                new_rules = rule_evaluator(new_x_train, new_col, new_rules, target_var, model, len(outdf), fidelity=0.8)
+                if len(new_rules) > 0:
+                    outdf = instance_remover(new_rules, outdf, new_col)
+                    new_x_train = instance_replacer(new_rules, new_x_train, new_col)
+                    for index, row in new_rules.iterrows():
+                        # Evaluate the fidelity of the new rule
+                        new_dict = {'neuron': new_col, 'class': row['max_class'].tolist()}
+                        rule_intervals = []
+                        for c in new_col:
+                            interv = intervals[c]
+                            rule_int = [item for item in interv if item[0] == row[c]]
+                            rule_intervals += rule_int
+                        new_dict['limits'] = rule_intervals
+                        ret.append(new_dict)
         combo_number += 1
     return ret
 
@@ -264,25 +273,29 @@ def refne_run(X_train, X_test, y_train, y_test, discrete_attributes, continuous_
     all_column_combos = column_combos(categorical_var=discrete_attributes, continuous_var=continuous_attributes)
     synth_samples = X_train.shape[0] * 2
     xSynth = synthetic_data_generator(X_train, synth_samples)
+    xSynth = xSynth.append(X_train, ignore_index=True)
     ySynth = np.argmax(model.predict(xSynth), axis=1)
     n_class = dataset_par['classes']
 
     # Discretising the continuous attributes
     attr_list = xSynth.columns.tolist()
     xSynth[label_col] = ySynth
+
     interv_dict = {}
     for attr in attr_list:
         if attr in continuous_attributes:
             interv = interval_definer(data=xSynth, attr=attr, label=label_col)
             xSynth[attr] = discretizer(xSynth[attr], interv)
+            X_train[attr] = discretizer(X_train[attr], interv)
             interv_dict[attr] = interv
         else:
             unique_values = np.unique(xSynth[attr]).tolist()
             interv_dict[attr] = [list(a) for a in zip(unique_values, unique_values)]
 
-    final_rules = rule_maker(xSynth, interv_dict, all_column_combos, label_col, model)
+    xSynth.to_csv('iris_synthetic.csv')
+    final_rules = rule_maker(xSynth, X_train, interv_dict, all_column_combos, label_col, model)
 
-    #print(final_rules)
+    print(final_rules)
     # Calculation of metrics
     predicted_labels = np.argmax(model.predict(X_test), axis=1)
 
