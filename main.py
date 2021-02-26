@@ -13,7 +13,7 @@ parameters = pd.read_csv('datasets-UCI/UCI_csv/summary.csv')
 label_col = 'class'
 data_path = 'datasets-UCI/UCI_csv/'
 
-for df in range(len(parameters)):
+for df in range(1, len(parameters)):
     metric_list = []
     dataset_par = parameters.iloc[df]
     print('--------------------------------------------------')
@@ -28,18 +28,18 @@ for df in range(len(parameters)):
                        + str(dataset_par['best_model']) + '.h5')
 
     print('---------------------- Working on REFNE -----------------------')
-    metric_refne = refne_run(X_train, X_test, y_train, y_test, discrete_attributes, continuous_attributes, label_col,
-                             dataset_par, model
-                             )
-    metric_list.append(['REFNE'] + metric_refne)
+    #metric_refne = refne_run(X_train, X_test, y_train, y_test, discrete_attributes, continuous_attributes, label_col,
+    #                         dataset_par, model
+    #                         )
+    #metric_list.append(['REFNE'] + metric_refne)
 
     print('---------------------- Working on C45 PANE -----------------------')
     #metric_c45 = run_c45_pane(X_train, X_test, y_test, dataset_par, model)
     #metric_list.append(['C45 PANE'] + metric_c45)
 
     print('---------------------- Working on RXNCN -----------------------')
-    # metric_rxncn = rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model)
-    # metric_list.append(['RXNCN'] + metric_rxncn)
+    metric_rxncn = rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model)
+    metric_list.append(['RXNCM'] + metric_rxncn)
 
     print('---------------------- Working on RXREN -----------------------')
     # metric_rxren = rxren_run(X_train, X_test, y_train, y_test, dataset_par, model)

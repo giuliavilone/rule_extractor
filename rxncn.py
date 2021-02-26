@@ -41,17 +41,15 @@ def network_pruning(w, correct_x, correct_y, test_x, test_y, accuracy, columns, 
     temp_x = copy.deepcopy(correct_x)
     temp_test_x = copy.deepcopy(test_x)
     significant_cols = copy.deepcopy(columns)
-    new_acc = accuracy
-    miss_classified_dict = {}
     theta = 0
     pruning = True
     while pruning:
-        miss_classified_dict = {}
         error_list = []
+        miss_classified_dict = {}
         for i in range(temp_w[0].shape[0]):
             res = model_pruned_prediction(i, temp_x, in_item, in_weight=temp_w)
             misclassified = prediction_classifier(correct_y, res)
-            miss_classified_dict[i] = misclassified
+            miss_classified_dict[significant_cols[i]] = misclassified
             error_list.append(sum([len(value) for key, value in misclassified.items()]))
         # In case the pruned network correctly predicts all the test inputs, the original network cannot be pruned
         # and its accuracy must be set equal to the accuracy of the original network
@@ -61,23 +59,23 @@ def network_pruning(w, correct_x, correct_y, test_x, test_y, accuracy, columns, 
             new_res = model_pruned_prediction(insignificant_neurons_temp, temp_test_x, in_item, in_weight=temp_w)
             new_acc_temp = accuracy_score(new_res, test_y)
             if new_acc_temp >= accuracy:
-                significant_cols = list(np.delete(np.array(significant_cols), insignificant_neurons_temp))
-                new_acc = new_acc_temp
+                significant_cols = {i: significant_cols[i] for i in significant_cols
+                                    if i not in insignificant_neurons_temp}
+                significant_cols = {i: v for i, v in enumerate(significant_cols.values())}
                 temp_x, temp_w = input_delete(insignificant_neurons_temp, temp_x, in_weight=temp_w)
                 temp_test_x, _ = input_delete(insignificant_neurons_temp, temp_test_x)
             else:
                 pruning = False
         else:
             pruning = False
+    return miss_classified_dict, temp_x, temp_w, theta, significant_cols
 
-    return miss_classified_dict, temp_x, temp_w, new_acc, theta, significant_cols
 
-
-def correct_examples_finder(correct_x, correct_y, in_item, in_weight=None):
+def correct_examples_finder(correct_x, correct_y, in_item, significant_cols, in_weight=None):
     """
     This function finds the examples correctly classified by the pruned network for each significant input neuron. The
     paper is not clear on how to do that, so my interpretation is that these are the examples correctly classified
-    when the significant neuron under analysis is removed, as done for the misclassified examples.
+    when the pruned network contains only the significant neuron under analysis.
     :param correct_x: correctX
     :param correct_y: correctX
     :param in_item: correctX
@@ -87,8 +85,9 @@ def correct_examples_finder(correct_x, correct_y, in_item, in_weight=None):
     """
     ret = {}
     for item in range(correct_x.shape[1]):
-        res = model_pruned_prediction([item], correct_x, in_item, in_weight=in_weight)
-        ret[item] = prediction_classifier(correct_y, res, comparison="correct")
+        to_be_removed = [i for i in range(correct_x.shape[1]) if i != item]
+        res = model_pruned_prediction(to_be_removed, correct_x, in_item, in_weight=in_weight)
+        ret[significant_cols[item]] = prediction_classifier(correct_y, res, comparison="correct")
     return ret
 
 
@@ -102,16 +101,17 @@ def combine_dict_list(dict_1, dict_2):
     return ret
 
 
-def rule_limits_calculator(c_x, c_y, classified_dict, alpha=0.1):
+def rule_limits_calculator(c_x, c_y, classified_dict, significant_cols, alpha=0.1):
     c_tot = np.column_stack((c_x, c_y))
     grouped_miss_class = {k: [] for k in np.unique(c_y)}
     for i in range(c_x.shape[1]):
-        mp = sum([len(value) for key, value in classified_dict[i].items()])
-        for k in np.unique(c_y):
-            ucm_class = c_tot[classified_dict[i][k]]
-            if len(ucm_class[:, i]) > (mp * alpha):
+        mp = sum([len(value) for key, value in classified_dict[significant_cols[i]].items()])
+        ucm_class = [len(c_tot[classified_dict[significant_cols[i]][k]]) for k in np.unique(c_y)]
+        if min(ucm_class) > (mp * alpha):
+            for k in np.unique(c_y):
+                limit_data = c_tot[classified_dict[significant_cols[i]][k]]
                 # Splitting the misclassified input values according to their output classes
-                grouped_miss_class[k] += [{'neuron': i, 'limits': [min(ucm_class[:, i]), max(ucm_class[:, i])]}]
+                grouped_miss_class[k] += [{'neuron': i, 'limits': [min(limit_data[:, i]), max(limit_data[:, i])]}]
     # Eliminate those classes that have empty lists
     grouped_miss_class = {k: v for k, v in grouped_miss_class.items() if len(v) > 0}
     return grouped_miss_class
@@ -166,18 +166,19 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model):
     test_acc = accuracy_score(test_pred, y_val)
     print("Accuracy of original model on the validation dataset: ", test_acc)
 
-    miss_dict, pruned_x, pruned_w, new_accuracy, err, sig_cols = network_pruning(weights, correctX, correcty, X_val,
-                                                                                 y_val, test_acc, column_lst,
-                                                                                 in_item=dataset_par)
+    miss_dict, pruned_x, pruned_w, err, sig_cols = network_pruning(weights, correctX, correcty, X_val, y_val,
+                                                                   test_acc, column_dict, in_item=dataset_par)
 
-    print("Accuracy of pruned network", new_accuracy)
-    corr_dict = correct_examples_finder(pruned_x, correcty, dataset_par, in_weight=pruned_w)
+    corr_dict = correct_examples_finder(pruned_x, correcty, dataset_par, sig_cols, in_weight=pruned_w)
     final_dict = combine_dict_list(miss_dict, corr_dict)
 
-    rule_limits = rule_limits_calculator(pruned_x, correcty, final_dict, alpha=alpha)
+    rule_limits = rule_limits_calculator(pruned_x, correcty, final_dict, sig_cols, alpha=alpha)
+    print(sig_cols)
+    print(rule_limits)
+    sys.exit()
 
     if len(rule_limits) > 0:
-        insignificant_neurons = [key for key, value in column_dict.items() if value not in sig_cols]
+        insignificant_neurons = [key for key, value in column_dict.items() if value not in list(sig_cols.values())]
         X_test, _ = input_delete(insignificant_neurons, X_test)
         X_train, _ = input_delete(insignificant_neurons, X_train)
         X_val, _ = input_delete(insignificant_neurons, X_val)
