@@ -79,6 +79,7 @@ def correct_examples_finder(correct_x, correct_y, in_item, significant_cols, in_
     :param correct_x: correctX
     :param correct_y: correctX
     :param in_item: correctX
+    :param significant_cols: list of significant columns
     :param in_weight: correctX
     :return: dictionary with the indexes of the neurons as keys and the list of the examples correctly classified for
     each of them
@@ -139,6 +140,23 @@ def rule_evaluator(x, y, rule_dict, orig_acc, class_list):
     return ret
 
 
+def rule_sorter(rules, in_df):
+    ret = {}
+    for cls, rule in rules.items():
+        number_covered_instances = 0
+        for item in rule:
+            minimum = item['limits'][0]
+            maximum = item['limits'][1]
+            number_covered_instances += len(in_df[np.logical_and(in_df[:, item['neuron']] >= minimum,
+                                                                 in_df[:, item['neuron']] <= maximum)]
+                                            )
+        ret[cls] = number_covered_instances
+    ret = dict(sorted(ret.items(), key=lambda item: item[1], reverse=True))
+    for cls, rule in ret.items():
+        ret[cls] = rules[cls]
+    return ret
+
+
 def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model):
     # Alpha is set equal to the percentage of input instances belonging to the least-represented class in the dataset
     alpha = 0.1
@@ -174,9 +192,6 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model):
 
     rule_limits = rule_limits_calculator(pruned_x, correcty, final_dict, sig_cols, alpha=alpha)
     print(sig_cols)
-    print(rule_limits)
-    sys.exit()
-
     if len(rule_limits) > 0:
         insignificant_neurons = [key for key, value in column_dict.items() if value not in list(sig_cols.values())]
         X_test, _ = input_delete(insignificant_neurons, X_test)
@@ -184,15 +199,17 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model):
         X_val, _ = input_delete(insignificant_neurons, X_val)
 
         if len(rule_limits) > 1:
-            rule_limits, rule_accuracy = rule_pruning(X_train, y_train, rule_limits, n_classes)
+            rule_limits, rule_accuracy = rule_pruning(X_val, y_val, rule_limits, n_classes)
         else:
             cls = list(rule_limits.keys())[0]
-            rule_accuracy = {cls: ruleset_accuracy(X_train, y_train, rule_limits[cls], cls, n_classes)}
+            rule_accuracy = {cls: ruleset_accuracy(X_val, y_val, rule_limits[cls], cls, n_classes)}
 
+        rule_limits = rule_sorter(rule_limits, X_train)
         print(rule_limits)
         print(rule_accuracy)
 
-        final_rules = rule_evaluator(X_val, y_val, rule_limits, rule_accuracy, np.unique(y))
+        y_val_predicted = model_pruned_prediction([], X_val, dataset_par, in_weight=pruned_w)
+        final_rules = rule_evaluator(X_val, y_val_predicted, rule_limits, rule_accuracy, np.unique(y))
 
         num_test_examples = X_test.shape[0]
         perturbed_data = perturbator(X_test)

@@ -2,6 +2,7 @@ from sklearn.metrics import accuracy_score
 import numpy as np
 import copy
 from common_functions import create_model
+import sys
 
 
 def prediction_reshape(prediction_list):
@@ -77,12 +78,15 @@ def rule_pruning(train_x, train_y, rule_set, classes_n):
 
 def rule_elicitation(x, pred_y, rule_list, cls):
     over_y = np.zeros(len(pred_y))
+    indexes = []
     for item in rule_list:
         minimum = item['limits'][0]
         maximum = item['limits'][1]
-        indexes = np.where((x[:, item['neuron']] >= minimum) * (x[:, item['neuron']] <= maximum))[0]
-        over_y[indexes] = 1
-        pred_y[(x[:, item['neuron']] >= minimum) * (x[:, item['neuron']] <= maximum)] = cls
+        item_indexes = np.where(np.logical_and(x[:, item['neuron']] >= minimum, x[:, item['neuron']] <= maximum))[0]
+        indexes.append(list(item_indexes))
+        over_y[item_indexes] = 1
+    intersect_indexes = list(set.intersection(*[set(lst) for lst in indexes]))
+    pred_y[intersect_indexes] = cls
     return pred_y, over_y
 
 
