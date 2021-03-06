@@ -1,4 +1,3 @@
-import pandas as pd
 from keras.models import load_model
 from keras.utils import to_categorical
 from keras.optimizers import SGD, Adagrad, Adam, Nadam, RMSprop
@@ -10,7 +9,6 @@ import dictlib
 from sklearn.model_selection import train_test_split
 from rxren_rxncn_functions import rule_pruning, rule_elicitation, ruleset_accuracy, rule_size_calculator, input_delete
 from rxren_rxncn_functions import model_pruned_prediction, prediction_reshape
-import sys
 
 
 # Functions
@@ -207,7 +205,8 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model):
 
         rule_limits = rule_sorter(rule_limits, X_train)
 
-        final_rules = rule_evaluator(X_val, y_val, rule_limits, rule_accuracy, np.unique(y))
+        y_val_predicted = np.argmax(model.predict(X_val), axis=1)
+        final_rules = rule_evaluator(X_val, y_val_predicted, rule_limits, rule_accuracy, np.unique(y))
 
         num_test_examples = X_test.shape[0]
         perturbed_data = perturbator(X_test)

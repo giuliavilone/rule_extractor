@@ -256,13 +256,13 @@ def rule_applier(indf, iny, rules):
 
 
 def column_translator(in_df, target_var, col_number_list):
-  # col_number_list contains the number of the df columns to be analysed.
-  # Here we need to get their names
-  df_columns = in_df.columns.tolist()
-  if target_var in df_columns:
-    df_columns.remove(target_var)
-  ret = [v for i, v in enumerate(df_columns) if i in col_number_list]
-  return ret
+    # col_number_list contains the number of the df columns to be analysed.
+    # Here we need to get their names
+    df_columns = in_df.columns.tolist()
+    if target_var in df_columns:
+        df_columns.remove(target_var)
+    ret = [v for i, v in enumerate(df_columns) if i in col_number_list]
+    return ret
 
 
 def refne_run(X_train, X_test, y_train, y_test, discrete_attributes, continuous_attributes, label_col, dataset_par,

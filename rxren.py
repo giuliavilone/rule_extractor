@@ -11,8 +11,9 @@ from rxren_rxncn_functions import model_pruned_prediction
 from scipy.stats import mode
 import sys
 
-#Global variables
+# Global variables
 TOLERANCE = 0.01
+
 
 # Functions
 def network_pruning(w, correct_x, correct_y, test_x, test_y, accuracy, in_item=None):
@@ -101,8 +102,7 @@ def rule_evaluator(x, y, rule_dict, orig_acc, class_list):
     # Calculate min and max of mismatched instances
     mismatched = [index for index, elem in enumerate(y) if elem != predicted_y[index]]
     for cls, rule_list in rule_dict.items():
-        print('Working on class: ', cls)
-        ixs = np.where(predicted_y == cls)[0].tolist()
+        ixs = np.where(y == cls)[0].tolist()
         ixs = [ix for ix in ixs if ix in mismatched]
         if len(ixs) > 0:
             for pos in range(len(rule_list)):
@@ -110,7 +110,9 @@ def rule_evaluator(x, y, rule_dict, orig_acc, class_list):
                 new_min = min(x[ixs, item['neuron']])
                 new_max = max(x[ixs, item['neuron']])
                 ret_rules[cls][pos] = {'neuron': item['neuron'], 'limits': [new_min, new_max]}
+                print(ret_rules)
                 new_acc = ruleset_accuracy(x, y, ret_rules[cls], cls, len(np.unique(y)))
+                print(new_acc, ' but original accuracy is ', rule_accuracy[cls])
                 if new_acc < rule_accuracy[cls]:
                     ret_rules[cls][pos] = rule_dict[cls][pos]
                 else:
@@ -125,9 +127,7 @@ def rxren_run(X_train, X_test, y_train, y_test, dataset_par, model):
 
     # model = load_model(MODEL_NAME)
     weights = np.array(model.get_weights())
-    results = model.predict(X_train)
-    results = np.argmax(results, axis=1)
-
+    results = np.argmax(model.predict(X_train), axis=1)
 
     correctX = X_train[[results[i] == y_train[i] for i in range(len(y_train))]]
     print('Number of correctly classified examples', correctX.shape)
@@ -141,12 +141,10 @@ def rxren_run(X_train, X_test, y_train, y_test, dataset_par, model):
     miss_list, ins_index, new_accuracy, err = network_pruning(weights, correctX, correcty, X_test, y_test,
                                                               test_acc, dataset_par
                                                               )
-
     significant_index = [i for i in range(weights[0].shape[0]) if i not in ins_index]
 
     print("Accuracy of pruned network", new_accuracy)
-
-    rule_limits = rule_limits_calculator(correctX, correcty, miss_list, significant_index, err, alpha=0.1)
+    rule_limits = rule_limits_calculator(correctX, correcty, miss_list, significant_index, err, alpha=0.5)
 
     if len(rule_limits) > 1:
         rule_dict = rule_combiner(rule_limits)
@@ -157,16 +155,16 @@ def rxren_run(X_train, X_test, y_train, y_test, dataset_par, model):
         for out_class, rule_list in rule_limits.items():
             rule_acc[out_class] = ruleset_accuracy(X_test, y_test, rule_list, out_class, len(np.unique(y)))
 
+    y_test_predicted = np.argmax(model.predict(X_test), axis=1)
     rule_simplifier = True
     while rule_simplifier:
-        new_rule_acc, final_rules = rule_evaluator(X_test, y_test, rule_limits, rule_acc, np.unique(y))
+        new_rule_acc, rule_limits = rule_evaluator(X_test, y_test_predicted, rule_limits, rule_acc, np.unique(y))
         if sum(new_rule_acc.values()) > sum(rule_acc.values()):
             rule_acc = new_rule_acc
         else:
             rule_simplifier = False
 
-    print(final_rules)
-
+    final_rules = rule_limits
     predicted_labels = model.predict(X_test)
     predicted_labels = np.argmax(predicted_labels, axis=1)
     num_test_examples = X_test.shape[0]

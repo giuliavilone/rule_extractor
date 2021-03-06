@@ -13,7 +13,7 @@ parameters = pd.read_csv('datasets-UCI/UCI_csv/summary.csv')
 label_col = 'class'
 data_path = 'datasets-UCI/UCI_csv/'
 
-for df in range(1, len(parameters)):
+for df in range(2, len(parameters)):
     metric_list = []
     dataset_par = parameters.iloc[df]
     print('--------------------------------------------------')
@@ -21,6 +21,7 @@ for df in range(1, len(parameters)):
     print('--------------------------------------------------')
     X_train, X_test, y_train, y_test, discrete_attributes, continuous_attributes = dataset_uploader(dataset_par,
                                                                                                     data_path,
+                                                                                                    cross_split=2,
                                                                                                     apply_smothe=False
                                                                                                     )
     X_train, X_test, y_train, y_test = X_train[0], X_test[0], y_train[0], y_test[0]
@@ -38,12 +39,12 @@ for df in range(1, len(parameters)):
     #metric_list.append(['C45 PANE'] + metric_c45)
 
     print('---------------------- Working on RXNCN -----------------------')
-    metric_rxncn = rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model)
-    metric_list.append(['RXNCM'] + metric_rxncn)
+    #metric_rxncn = rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model)
+    #metric_list.append(['RXNCM'] + metric_rxncn)
 
     print('---------------------- Working on RXREN -----------------------')
-    # metric_rxren = rxren_run(X_train, X_test, y_train, y_test, dataset_par, model)
-    # metric_list.append(['RXREN'] + metric_rxren)
+    metric_rxren = rxren_run(X_train, X_test, y_train, y_test, dataset_par, model)
+    metric_list.append(['RXREN'] + metric_rxren)
 
     print('---------------------- Working on TREPAN -----------------------')
     #metric_trepan = run_trepan(X_train, X_test, y_train, y_test, discrete_attributes, dataset_par, model)

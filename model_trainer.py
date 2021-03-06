@@ -96,7 +96,7 @@ def model_creator(item, target_var='class', cross_split=5, remove_columns=True):
 
 
 parameters = pd.read_csv('datasets-UCI/UCI_csv/summary.csv')
-dataset_par = parameters.iloc[1]
+dataset_par = parameters.iloc[2]
 print('--------------------------------------------------')
 print(dataset_par['dataset'])
 print('--------------------------------------------------')
