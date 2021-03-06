@@ -130,6 +130,7 @@ def rule_evaluator(x, y, rule_dict, orig_acc, class_list):
         ixs = np.where(predicted_y == cls)[0].tolist()
         if len(ixs) > 0:
             for pos in range(len(rule_list)):
+                print(pos)
                 item = rule_list[pos]
                 new_min = min(x[ixs, item['neuron']])
                 new_max = max(x[ixs, item['neuron']])
@@ -191,7 +192,7 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model):
     final_dict = combine_dict_list(miss_dict, corr_dict)
 
     rule_limits = rule_limits_calculator(pruned_x, correcty, final_dict, sig_cols, alpha=alpha)
-    print(sig_cols)
+
     if len(rule_limits) > 0:
         insignificant_neurons = [key for key, value in column_dict.items() if value not in list(sig_cols.values())]
         X_test, _ = input_delete(insignificant_neurons, X_test)
@@ -205,11 +206,8 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model):
             rule_accuracy = {cls: ruleset_accuracy(X_val, y_val, rule_limits[cls], cls, n_classes)}
 
         rule_limits = rule_sorter(rule_limits, X_train)
-        print(rule_limits)
-        print(rule_accuracy)
 
-        y_val_predicted = model_pruned_prediction([], X_val, dataset_par, in_weight=pruned_w)
-        final_rules = rule_evaluator(X_val, y_val_predicted, rule_limits, rule_accuracy, np.unique(y))
+        final_rules = rule_evaluator(X_val, y_val, rule_limits, rule_accuracy, np.unique(y))
 
         num_test_examples = X_test.shape[0]
         perturbed_data = perturbator(X_test)
