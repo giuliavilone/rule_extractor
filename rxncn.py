@@ -118,6 +118,7 @@ def rule_limits_calculator(c_x, c_y, classified_dict, significant_cols, alpha=0.
 
 def rule_evaluator(x, y, rule_dict, orig_acc, class_list):
     ret = copy.deepcopy(rule_dict)
+    rule_accuracy = copy.deepcopy(orig_acc)
     predicted_y = np.empty(x.shape[0])
     predicted_y[:] = np.NaN
     for cls, rule_list in rule_dict.items():
@@ -136,7 +137,9 @@ def rule_evaluator(x, y, rule_dict, orig_acc, class_list):
                 new_acc = ruleset_accuracy(x, y, ret[cls], cls, len(np.unique(y)))
                 if new_acc < orig_acc[cls]:
                     ret[cls][pos] = rule_dict[cls][pos]
-    return ret
+                else:
+                    rule_accuracy[cls] = new_acc
+    return rule_accuracy, ret
 
 
 def rule_sorter(rules, in_df):
@@ -160,6 +163,7 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model):
     # Alpha is set equal to the percentage of input instances belonging to the least-represented class in the dataset
     alpha = 0.1
     X_test, X_val, y_test, y_val = train_test_split(X_test, y_test, test_size=0.33)
+    print(X_train.shape, X_test.shape, X_val.shape)
 
     column_lst = X_train.columns.tolist()
     column_dict = {i: column_lst[i] for i in range(len(column_lst))}
@@ -204,9 +208,17 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model):
             rule_accuracy = {cls: ruleset_accuracy(X_val, y_val, rule_limits[cls], cls, n_classes)}
 
         rule_limits = rule_sorter(rule_limits, X_train)
+        print(rule_limits)
 
-        y_val_predicted = np.argmax(model.predict(X_val), axis=1)
-        final_rules = rule_evaluator(X_val, y_val_predicted, rule_limits, rule_accuracy, np.unique(y))
+        y_val_predicted = model_pruned_prediction([], X_val, dataset_par, in_weight=pruned_w)
+        rule_simplifier = True
+        while rule_simplifier:
+            new_rule_acc, rule_limits = rule_evaluator(X_val, y_val_predicted, rule_limits, rule_accuracy, np.unique(y))
+            if sum(new_rule_acc.values()) > sum(rule_accuracy.values()):
+                rule_accuracy = new_rule_acc
+            else:
+                rule_simplifier = False
+        final_rules = rule_limits
 
         num_test_examples = X_test.shape[0]
         perturbed_data = perturbator(X_test)
