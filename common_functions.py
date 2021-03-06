@@ -40,10 +40,10 @@ def create_model(train_x, n_classes, neurons, optimizer='Adam', init_mode='gloro
                     )
               )
     model.add(Dropout(dropout_rate))
-    #model.add(Dense(neurons, activation=activation, kernel_initializer=init_mode
-    #                )
-    #          )
-    #model.add(Dropout(dropout_rate))
+    model.add(Dense(neurons, activation=activation, kernel_initializer=init_mode
+                    )
+              )
+    model.add(Dropout(dropout_rate))
     model.add(Dense(n_classes, activation=out_activation))
     # Compile model
     model.compile(loss=loss, optimizer=optimizer, metrics=['accuracy'])
