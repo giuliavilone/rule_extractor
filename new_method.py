@@ -9,12 +9,13 @@ from sklearn.cluster import AgglomerativeClustering
 import matplotlib.pyplot as plt
 from itertools import cycle, islice
 from sklearn.metrics import accuracy_score
-from mpl_toolkits.mplot3d import Axes3D
+import copy
 import sys
 
 # This is to avoid showing a Pandas warning when creating a new column in a dataframe by assigning it the values
 # from a list
 pd.options.mode.chained_assignment = None
+
 
 def prediction_classifier(orig_y, predict_y, comparison="misclassified"):
     ret = {}
@@ -33,7 +34,6 @@ def network_pruning(w, correct_x, correct_y, in_item=None):
     :param w: model's weights
     :param correct_x: set of correctly classified instances (independent variables)
     :param correct_y: set of correctly classified instances (dependent variable)
-    :param test_x: test dataset (independent variables)
     :param in_item: in_item
     :return: miss-classified instances, pruned weights, accuracy of pruned model,
     """
@@ -64,6 +64,7 @@ def remove_column(df, column_tbm, in_weight=None):
     """
     Remove the columns not listed in column_tbm from the input dataframe and, if not none, from the model's weights
     :param df: input pandas dataframe
+    :param column_tbm: list of columns to be maintained in the dataframe
     :param in_weight: array of model's weights
     :param column_tbm: list of columns to be maintained in the input dataframe and the array of weights
     :return:
@@ -116,12 +117,26 @@ def rule_elicitation(x, in_rule):
     return ret, intersect_indexes
 
 
-def rule_extractor(in_df, label_col, number_clusters=2):
+def ruleset_evaluator(x, original_y, ruleset):
+    predicted_y = []
+    for rule in ruleset:
+        _, indexes = rule_elicitation(x, rule)
+        predicted_y.append((len(indexes), indexes, rule['class']))
+    pred_y = sorted(predicted_y, reverse=True, key=lambda tup: tup[0])
+    ret = np.empty(len(x))
+    for t in pred_y:
+        ret[t[1]] = t[2]
+    ret[np.where(np.isnan(ret))] = len(np.unique(y)) + 10
+    accuracy = accuracy_score(ret.round(), original_y)
+    return accuracy, ret
+
+
+def rule_extractor(in_df, label_col, number_clusters=2, linkage='complete', min_sample=30):
     ruleset = []
     groups = in_df.groupby(label_col, as_index=False)
     for key, group in groups:
-        if len(group) > 1:
-            clustering = AgglomerativeClustering(n_clusters=number_clusters, linkage='complete').fit(group.to_numpy())
+        if len(group) > min_sample:
+            clustering = AgglomerativeClustering(n_clusters=number_clusters, linkage=linkage).fit(group.to_numpy())
             group['clusters'] = clustering.labels_
             ans = [pd.DataFrame(x) for _, x in group.groupby('clusters', as_index=False)]
             new_rules = rule_creator(ans, label_col, 'clusters')
@@ -141,15 +156,29 @@ def rule_extractor(in_df, label_col, number_clusters=2):
     return ruleset
 
 
+def rule_pruning(rule_set, original_accuracy, x, original_y):
+    new_rules = copy.deepcopy(rule_set)
+    ret = []
+    item = 0
+    while item < len(new_rules):
+        rule = new_rules.pop(item)
+        new_accuracy, _ = ruleset_evaluator(x, original_y, new_rules)
+        if new_accuracy < original_accuracy:
+            ret.append(rule)
+            new_rules = [rule] + new_rules
+            item += 1
+    return ret
+
+
 MINIMUM_ACC = 0.7
 LABEL_COL = 'class'
 parameters = pd.read_csv('datasets-UCI/UCI_csv/summary.csv')
 data_path = 'datasets-UCI/UCI_csv/'
 dataset_par = parameters.iloc[0]
 print(dataset_par['dataset'])
-X_train, X_test, y_train, y_test, _, _ = dataset_uploader(dataset_par, data_path, apply_smothe=False)
+X_train, X_test, _, _, _, _ = dataset_uploader(dataset_par, data_path, apply_smothe=False)
 
-X_train, X_test, y_train, y_test = X_train[0], X_test[0], y_train[0], y_test[0]
+X_train = pd.concat([X_train[0], X_test[0]], ignore_index=True)
 model = load_model('trained_models/trained_model_' + dataset_par['dataset'] + '_'
                    + str(dataset_par['best_model']) + '.h5'
                    )
@@ -166,7 +195,15 @@ X = xSynth.append(X_train, ignore_index=True)
 y = np.argmax(model.predict(X), axis=1)
 X[LABEL_COL] = y
 rules = rule_extractor(X, LABEL_COL, number_clusters=2)
+
 print('------------------------------- Final rules -------------------------------')
 print(len(rules))
-
-
+rule_accuracy, rule_prediction = ruleset_evaluator(X, y, rules)
+print('Original accuracy: ', rule_accuracy)
+rules = rule_pruning(rules, rule_accuracy, X, y)
+print('------------------------------- Final rules -------------------------------')
+print(len(rules))
+rule_accuracy, rule_prediction = ruleset_evaluator(X, y, rules)
+print('New original accuracy: ', rule_accuracy)
+cluster_plots(X, y)
+cluster_plots(X, rule_prediction.round().astype(int))
