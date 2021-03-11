@@ -9,7 +9,6 @@ from tensorflow.keras.layers import Dropout
 from tensorflow.keras.wrappers.scikit_learn import KerasClassifier
 from keras.constraints import maxnorm
 from sklearn.preprocessing import LabelEncoder
-import sys
 
 
 # fix random seed for reproducibility

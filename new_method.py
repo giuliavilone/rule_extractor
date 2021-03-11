@@ -1,5 +1,4 @@
 import pandas as pd
-import copy
 import numpy as np
 from keras.models import load_model
 from rxren_rxncn_functions import input_delete, model_pruned_prediction
@@ -10,7 +9,13 @@ import matplotlib.pyplot as plt
 from itertools import cycle, islice
 from sklearn.metrics import accuracy_score
 import copy
-import sys
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+
+# These are to remove some of the tensorflow warnings. The code works in any case
+# import os
+# os.environ['TF_XLA_FLAGS'] = '--tf_xla_enable_xla_devices'
+# os.environ['CUDA_VISIBLE_DEVICES'] = "1"
 
 # This is to avoid showing a Pandas warning when creating a new column in a dataframe by assigning it the values
 # from a list
@@ -80,51 +85,52 @@ def remove_column(df, column_tbm, in_weight=None):
 def cluster_plots(in_df, clusters):
     colors = np.array(list(islice(cycle(['#377eb8', '#ff7f00', '#4daf4a', '#f781bf', '#a65628', '#984ea3',
                                          '#999999', '#e41a1c', '#dede00']), int(max(clusters) + 1))))
-    plt.scatter(in_df['sepalwidth'], in_df['petallength'], color=colors[clusters])
-    plt.show()
-    plt.scatter(in_df['sepallength'], in_df['petalwidth'], color=colors[clusters])
-    plt.show()
-    plt.scatter(in_df['sepalwidth'], in_df['petalwidth'], color=colors[clusters])
-    plt.show()
-    plt.scatter(in_df['petallength'], in_df['petalwidth'], color=colors[clusters])
+    features = in_df.columns.tolist()
+    features.remove(LABEL_COL)
+    x = in_df.loc[:, features].values
+    x = StandardScaler().fit_transform(x)
+    pca = PCA(n_components=2)
+    principal_components = pca.fit_transform(x)
+    principal_df = pd.DataFrame(data=principal_components, columns=['PCA1', 'PCA2'])
+    plt.scatter(principal_df['PCA1'], principal_df['PCA2'], color=colors[clusters])
     plt.show()
 
 
 def rule_creator(in_df_list, *args):
-    ruleset = []
+    rule_set = []
     for df in in_df_list:
         rule = {'class': df['class'].unique()[0]}
         df = df.drop(list(args), axis=1)
         rule['columns'] = df.columns.tolist()
         rule['limits'] = [(df[col].min(), df[col].max()) for col in df.columns.tolist()]
-        ruleset.append(rule)
-    return ruleset
+        rule_set.append(rule)
+    return rule_set
 
 
 def rule_elicitation(x, in_rule):
-    orig_y = x[LABEL_COL].to_numpy()
-    pred_y = np.empty(len(y))
+    original_y = x[LABEL_COL].to_numpy()
+    predicted_y = np.empty(len(y))
     indexes = []
     for item in range(len(in_rule['columns'])):
         minimum = in_rule['limits'][item][0]
         maximum = in_rule['limits'][item][1]
-        clmn = in_rule['columns'][item]
-        item_indexes = np.where(np.logical_and(x[clmn] >= minimum, x[clmn] <= maximum))[0]
+        column = in_rule['columns'][item]
+        item_indexes = np.where(np.logical_and(x[column] >= minimum, x[column] <= maximum))[0]
         indexes.append(list(item_indexes))
     intersect_indexes = list(set.intersection(*[set(lst) for lst in indexes]))
-    pred_y[intersect_indexes] = in_rule['class']
-    ret = accuracy_score(orig_y[intersect_indexes], pred_y[intersect_indexes])
+    predicted_y[intersect_indexes] = in_rule['class']
+    ret = accuracy_score(original_y[intersect_indexes], predicted_y[intersect_indexes])
     return ret, intersect_indexes
 
 
-def ruleset_evaluator(x, original_y, ruleset):
+def rule_set_evaluator(x, original_y, rule_set):
     predicted_y = []
-    for rule in ruleset:
+    for rule in rule_set:
         _, indexes = rule_elicitation(x, rule)
         predicted_y.append((len(indexes), indexes, rule['class']))
-    pred_y = sorted(predicted_y, reverse=True, key=lambda tup: tup[0])
+    predicted_y = sorted(predicted_y, reverse=True, key=lambda tup: tup[0])
     ret = np.empty(len(x))
-    for t in pred_y:
+    for t in predicted_y:
         ret[t[1]] = t[2]
     ret[np.where(np.isnan(ret))] = len(np.unique(y)) + 10
     accuracy = accuracy_score(ret.round(), original_y)
@@ -132,7 +138,7 @@ def ruleset_evaluator(x, original_y, ruleset):
 
 
 def rule_extractor(in_df, label_col, number_clusters=2, linkage='complete', min_sample=30):
-    ruleset = []
+    rule_set = []
     groups = in_df.groupby(label_col, as_index=False)
     for key, group in groups:
         if len(group) > min_sample:
@@ -144,16 +150,16 @@ def rule_extractor(in_df, label_col, number_clusters=2, linkage='complete', min_
                 rule_acc, indexes = rule_elicitation(in_df, rule)
                 if rule_acc < MINIMUM_ACC:
                     new_x = in_df[in_df.index.isin(indexes)]
-                    ruleset += rule_extractor(new_x, label_col)
+                    rule_set += rule_extractor(new_x, label_col)
                 else:
-                    ruleset.append(rule)
+                    rule_set.append(rule)
         else:
             group = group.drop(label_col, axis=1)
             rule = {'class': key, 'columns': group.columns.tolist(),
                     'limits': [(group[col].min(), group[col].max()) for col in group.columns.tolist()]
                     }
-            ruleset.append(rule)
-    return ruleset
+            rule_set.append(rule)
+    return rule_set
 
 
 def rule_pruning(rule_set, original_accuracy, x, original_y):
@@ -162,7 +168,7 @@ def rule_pruning(rule_set, original_accuracy, x, original_y):
     item = 0
     while item < len(new_rules):
         rule = new_rules.pop(item)
-        new_accuracy, _ = ruleset_evaluator(x, original_y, new_rules)
+        new_accuracy, _ = rule_set_evaluator(x, original_y, new_rules)
         if new_accuracy < original_accuracy:
             ret.append(rule)
             new_rules = [rule] + new_rules
@@ -187,6 +193,7 @@ results = model.predict_classes(X_train)
 weights = np.array(model.get_weights())
 significant_features = network_pruning(weights, X_train, results, in_item=dataset_par)
 print(significant_features)
+
 X_train, weights = remove_column(X_train, significant_features, in_weight=weights)
 
 xSynth = synthetic_data_generator(X_train, X_train.shape[0] * 4)
@@ -198,12 +205,12 @@ rules = rule_extractor(X, LABEL_COL, number_clusters=2)
 
 print('------------------------------- Final rules -------------------------------')
 print(len(rules))
-rule_accuracy, rule_prediction = ruleset_evaluator(X, y, rules)
+rule_accuracy, _ = rule_set_evaluator(X, y, rules)
 print('Original accuracy: ', rule_accuracy)
 rules = rule_pruning(rules, rule_accuracy, X, y)
 print('------------------------------- Final rules -------------------------------')
 print(len(rules))
-rule_accuracy, rule_prediction = ruleset_evaluator(X, y, rules)
+rule_accuracy, rule_prediction = rule_set_evaluator(X, y, rules)
 print('New original accuracy: ', rule_accuracy)
 cluster_plots(X, y)
 cluster_plots(X, rule_prediction.round().astype(int))

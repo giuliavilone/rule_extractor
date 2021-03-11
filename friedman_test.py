@@ -1,23 +1,22 @@
 from scipy.stats import friedmanchisquare
 import pandas as pd
 from scipy.stats import rankdata
-import sys
 
 
 def method_ranking(df):
-    outlist = []
+    ret_list = []
     for label, col in df.iteritems():
         if (label == 'Method') or (label == 'Dataset'):
             col = col.tolist()
             col.insert(0, label)
-            outlist.append(col)
+            ret_list.append(col)
         else:
             col = col.to_numpy()
             ranks = rankdata(col).tolist()
             ranks.insert(0, label)
-            outlist.append(ranks)
-        outdf = pd.DataFrame(outlist, columns=['item', 'rank1', 'rank2', 'rank3', 'rank4', 'rank5'])
-    return outdf
+            ret_list.append(ranks)
+    ret_df = pd.DataFrame(ret_list, columns=['item', 'rank1', 'rank2', 'rank3', 'rank4', 'rank5'])
+    return ret_df
 
 
 def decreasing_ranking(df, column_list):

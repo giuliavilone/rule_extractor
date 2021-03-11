@@ -7,7 +7,6 @@ from sklearn import linear_model
 from sklearn.metrics import mean_squared_error
 import itertools
 from sklearn.preprocessing import LabelEncoder
-import sys
 
 
 def correlation_matrix_plot(in_corr_matrix, title, save_corr_matrix=False):
@@ -139,7 +138,7 @@ if dataset_correlation:
             # removes those that are weakly correlated with all the others and plots only those with
             # some correlation values that are greater than 0.5
             corr_matrix = feature_selector(corr_matrix)
-        elif dataset_name in ('diabetic data'):
+        elif dataset_name in 'diabetic data':
             corr_matrix = feature_selector(corr_matrix, threshold=0.3)
         if plot_matrix:
             correlation_matrix_plot(corr_matrix, dataset_name)
