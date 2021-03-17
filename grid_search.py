@@ -32,7 +32,7 @@ if load_arff:
     X = dataset.drop(columns=[label_col]).to_numpy()
     Y = le.fit_transform(dataset[label_col].tolist())
 else:
-    dataset = pd.read_csv('datasets-UCI/UCI_csv/australian.csv')
+    dataset = pd.read_csv('datasets-UCI/UCI_csv/heart.csv')
     col_types = dataset.dtypes
     for index, value in col_types.items():
         if value in ('object', 'bool'):

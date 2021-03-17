@@ -1,7 +1,6 @@
 from keras.callbacks import ModelCheckpoint
 from keras.models import Sequential
 from keras.layers import Dense, Dropout
-from keras.constraints import maxnorm
 import numpy as np
 from scipy.stats import mode
 import pandas as pd
@@ -10,39 +9,25 @@ from sklearn.model_selection import StratifiedKFold
 from imblearn.over_sampling import SMOTE
 
 
-def vote_db_modifier(indf):
+def vote_db_modifier(in_df):
     """
     Modify the vote database by replacing yes/no answers with boolean
-    :type indf: Pandas dataframe
+    :param in_df: Pandas dataframe
     """
-    indf.replace(b'y', 1, inplace=True)
-    indf.replace(b'n', 0, inplace=True)
-    indf.replace(b'?', 0, inplace=True)
-    return indf
+    in_df.replace(b'y', 1, inplace=True)
+    in_df.replace(b'n', 0, inplace=True)
+    in_df.replace(b'?', 0, inplace=True)
+    return in_df
 
 
-def create_model_old(train_x, num_classes, hidden_nodes):
-    model = Sequential()
-    model.add(Dense(hidden_nodes, input_dim=train_x.shape[1], activation="sigmoid"))
-    model.add(Dense(num_classes, activation="softmax"))
-    model.compile(loss="categorical_crossentropy", optimizer="adam", metrics=['accuracy'])
-    return model
-
-
-def create_model(train_x, n_classes, neurons, optimizer='Adam', init_mode='glorot_uniform',
-                 activation='sigmoid', dropout_rate=0.0, loss='categorical_crossentropy',
-                 out_activation='softmax'
+def create_model(train_x, n_classes, neurons, optimizer='Adam', init_mode='glorot_uniform', activation='sigmoid',
+                 dropout_rate=0.0, loss='categorical_crossentropy', out_activation='softmax'
                  ):
     # create model
     model = Sequential()
-    model.add(Dense(neurons, input_dim=train_x.shape[1], activation=activation,
-                    kernel_initializer=init_mode
-                    )
-              )
+    model.add(Dense(neurons, input_dim=train_x.shape[1], activation=activation, kernel_initializer=init_mode))
     model.add(Dropout(dropout_rate))
-    model.add(Dense(neurons, activation=activation, kernel_initializer=init_mode
-                    )
-              )
+    model.add(Dense(neurons, activation=activation, kernel_initializer=init_mode))
     model.add(Dropout(dropout_rate))
     model.add(Dense(n_classes, activation=out_activation))
     # Compile model
@@ -62,23 +47,25 @@ def model_train(train_x, train_y, test_x, test_y, model, model_name, n_epochs=10
     return model, history
 
 
-def perturbator(indf, mu=0, sigma=0.1):
+def perturbator(in_df, mu=0, sigma=0.1):
     """
     Add white noise to input dataset
-    :type indf: Pandas dataframe
+    :param in_df: Pandas dataframe
+    :param mu: mean of the normally distributed white noise
+    :param sigma: standard deviation of the normally distributed white noise
     """
-    noise = np.random.normal(mu, sigma, indf.shape)
-    return indf + noise
+    noise = np.random.normal(mu, sigma, in_df.shape)
+    return in_df + noise
 
 
-# make an ensemble prediction for multi-class classification
-def ensemble_predictions(members, testX):
+def ensemble_predictions(members, test_x):
+    # make an ensemble prediction for multi-class classification
     # make predictions
-    yhats = [model.predict(testX) for model in members]
-    yhats = np.array(yhats)
+    y_hats = [model.predict(test_x) for model in members]
+    y_hats = np.array(y_hats)
     # combining the members via plurality voting
-    voted_yhats = np.argmax(yhats, axis=2)
-    results = mode(voted_yhats, axis=0)[0]
+    voted_y_hats = np.argmax(y_hats, axis=2)
+    results = mode(voted_y_hats, axis=0)[0]
     return results
 
 
@@ -119,48 +106,94 @@ def dataset_uploader(item, path, target_var='class', cross_split=5, apply_smothe
     out_cont = [i for i, v in enumerate(independent_columns) if i not in out_disc]
 
     # Separating independent variables from the target one
+
     y = le.fit_transform(dataset[target_var].tolist())
-    X = dataset.drop(columns=[target_var])
+    labels = list(le.fit(dataset[target_var].tolist()).classes_)
+    x = dataset.drop(columns=[target_var])
     # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=(1 - train_split))
-    X_train_list, X_test_list, y_train_list, y_test_list = [], [], [], []
+    x_train_list, x_test_list, y_train_list, y_test_list = [], [], [], []
     cv = StratifiedKFold(n_splits=cross_split)
-    for train_idx, test_idx, in cv.split(X, y):
-        X_train, y_train = X[X.index.isin(train_idx)], y[train_idx]
+    for train_idx, test_idx, in cv.split(x, y):
+        x_train, y_train = x[x.index.isin(train_idx)], y[train_idx]
         if apply_smothe:
-            X_train, y_train = SMOTE().fit_sample(X_train, y_train)
-        X_test, y_test = X[X.index.isin(test_idx)], y[test_idx]
-        X_train_list.append(X_train)
-        X_test_list.append(X_test)
+            x_train, y_train = SMOTE().fit_sample(x_train, y_train)
+        x_test, y_test = x[x.index.isin(test_idx)], y[test_idx]
+        x_train_list.append(x_train)
+        x_test_list.append(x_test)
         y_train_list.append(y_train)
         y_test_list.append(y_test)
-    return X_train_list, X_test_list, y_train_list, y_test_list, out_disc, out_cont
+    return x_train_list, x_test_list, y_train_list, y_test_list, labels, out_disc, out_cont
 
 
-def rule_metrics_calculator(num_examples, y_test, rule_labels, model_labels, perturbed_labels, rule_n,
-                            complete, avg_length, overlap, n_classes):
+def rule_elicitation(in_df, iny, rules):
+    """
+    Apply the input rules to the list of labels iny according to the rule conditions on in_df
+    :param in_df:
+    :param iny:
+    :param rules:
+    :return: iny
+    """
+    indexes = []
+    over_y = np.zeros(len(iny))
+    for r in range(len(rules['columns'])):
+        x = in_df[rules['columns'][r]]
+        if len(rules['limits']) > 0:
+            ix = list(np.where((x >= rules['limits'][r][0]) & (x <= rules['limits'][r][1]))[0])
+            indexes.append(list(ix))
+            over_y[ix] = 1
+    intersect_indexes = list(set.intersection(*[set(lst) for lst in indexes]))
+    iny[intersect_indexes] = rules['class']
+    return iny, over_y
+
+
+def rule_metrics_calculator(in_df, y_test, model_labels, final_rules, n_classes):
     """
     Calculate the correctness, fidelity, robustness and number of rules. The completeness, average length and number
     of rules are calculated in a different way for each rule extractor and passed as inputs
-    :return:
+    :return: list of metrics
     """
+    rule_n = len(final_rules)
+    num_test_examples = in_df.shape[0]
+    perturbed_data = perturbator(in_df)
+    rule_labels = np.empty(num_test_examples)
+    rule_labels[:] = np.nan
+    perturbed_labels = np.empty(num_test_examples)
+    perturbed_labels[:] = np.nan
+    overlap = np.zeros(num_test_examples)
+
+    for rule in final_rules:
+        neuron = in_df[rule['columns']]
+        rule_labels, rule_overlap = rule_elicitation(neuron, rule_labels, rule)
+        overlap += rule_overlap
+        p_neuron = perturbed_data[rule['columns']]
+        perturbed_labels, _ = rule_elicitation(p_neuron, rule_labels, rule)
+
+    y_test = y_test.tolist()
+    if len(final_rules) > 0:
+        avg_length = sum([len(item['columns']) for item in final_rules]) / rule_n
+    else:
+        avg_length = 0
+    complete = sum(~np.isnan(rule_labels)) / num_test_examples
+    rule_labels[np.where(np.isnan(rule_labels))] = n_classes + 10
+    perturbed_labels[np.where(np.isnan(perturbed_labels))] = n_classes + 10
     correct = 0
     fidel = 0
     rob = 0
-    for i in range(0, num_examples):
+    for i in range(0, num_test_examples):
         fidel += (rule_labels[i] == model_labels[i])
         correct += (rule_labels[i] == y_test[i])
         rob += (rule_labels[i] == perturbed_labels[i])
 
     print("Completeness of the ruleset is: " + str(complete))
-    correctness = correct / num_examples
+    correctness = correct / num_test_examples
     print("Correctness of the ruleset is: " + str(correctness))
-    fidelity = fidel / num_examples
+    fidelity = fidel / num_test_examples
     print("Fidelity of the ruleset is: " + str(fidelity))
-    robustness = rob / num_examples
+    robustness = rob / num_test_examples
     print("Robustness of the ruleset is: " + str(robustness))
     print("Number of rules : " + str(rule_n))
     print("Average rule length: " + str(avg_length))
-    overlap = sum(overlap) / (rule_n * num_examples)
+    overlap = sum(overlap) / (rule_n * num_test_examples)
     print("Fraction overlap: " + str(overlap))
     labels_considered = set(rule_labels)
     labels_considered.discard(n_classes + 10)

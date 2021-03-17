@@ -17,6 +17,7 @@ def run_trepan(X_train, X_test, y_train, y_test, discrete_list, dataset_par, mod
 
     # tree_obj.print_tree_levels(root)
     final_rules = tree_obj.leaf_values(root)
+    print(final_rules)
     # print(final_rules)
     tree_obj.print_tree_rule(root)
 

@@ -182,7 +182,8 @@ parameters = pd.read_csv('datasets-UCI/UCI_csv/summary.csv')
 data_path = 'datasets-UCI/UCI_csv/'
 dataset_par = parameters.iloc[0]
 print(dataset_par['dataset'])
-X_train, X_test, _, _, _, _ = dataset_uploader(dataset_par, data_path, apply_smothe=False)
+X_train, X_test, _, _, labels, _, _ = dataset_uploader(dataset_par, data_path, apply_smothe=False)
+print(labels)
 
 X_train = pd.concat([X_train[0], X_test[0]], ignore_index=True)
 model = load_model('trained_models/trained_model_' + dataset_par['dataset'] + '_'
@@ -210,6 +211,7 @@ print('Original accuracy: ', rule_accuracy)
 rules = rule_pruning(rules, rule_accuracy, X, y)
 print('------------------------------- Final rules -------------------------------')
 print(len(rules))
+print(rules)
 rule_accuracy, rule_prediction = rule_set_evaluator(X, y, rules)
 print('New original accuracy: ', rule_accuracy)
 cluster_plots(X, y)

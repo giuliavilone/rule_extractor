@@ -2,7 +2,6 @@ from keras.callbacks import ModelCheckpoint, EarlyStopping
 from keras.models import Sequential
 from keras.layers import Dense
 from keras.layers import Dropout
-from keras.constraints import maxnorm
 from keras.utils import to_categorical
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
@@ -77,10 +76,9 @@ def model_creator(item, target_var='class', cross_split=5, remove_columns=True):
     ret = []
     for train_idx, test_idx, in cv.split(X, y):
         X_train, y_train = X[X.index.isin(train_idx)], y[train_idx]
-        X_train, y_train = SMOTE().fit_sample(X_train, y_train)
+        X_train, y_train = SMOTE().fit_resample(X_train, y_train)
         X_test, y_test = X[X.index.isin(test_idx)], y[test_idx]
-        model = create_model(X_train, item['classes'], item['neurons'],
-                             item['optimizer'], item['init_mode'],
+        model = create_model(X_train, item['classes'], item['neurons'], item['optimizer'], item['init_mode'],
                              item['activation'], item['dropout_rate']
                              )
         m, h = model_train(X_train, y_train, X_test, y_test, model,
@@ -96,7 +94,7 @@ def model_creator(item, target_var='class', cross_split=5, remove_columns=True):
 
 
 parameters = pd.read_csv('datasets-UCI/UCI_csv/summary.csv')
-dataset_par = parameters.iloc[2]
+dataset_par = parameters.iloc[4]
 print('--------------------------------------------------')
 print(dataset_par['dataset'])
 print('--------------------------------------------------')

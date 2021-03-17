@@ -1,12 +1,9 @@
 import pandas as pd
 from keras.models import load_model
-from keras.optimizers import SGD, Adagrad, Adam, Nadam
 import numpy as np
-from common_functions import perturbator, ensemble_predictions, dataset_uploader
-from common_functions import rule_metrics_calculator
+from common_functions import perturbator, rule_metrics_calculator, rule_elicitation
 import random
 import copy
-import sys
 import itertools
 
 
@@ -121,12 +118,18 @@ def select_random_item(int_list, ex_item_list):
 def rule_evaluator(df, rule_columns, new_rule_set, out_var, model, n_samples, fidelity=0.0):
     """
     Evaluate the fidelity of the new rule
-    :param new_rule_set:
-    :return: boolean (true, false)
+    :param df: input dataframe containing the training samples
+    :param rule_columns: list of the variables used by the input rule to be evaluated
+    :param new_rule_set: set of rules to be evaluated
+    :param out_var: name of the target variable
+    :param model: trained model
+    :param n_samples: number of new samples to be randomly generated
+    :param fidelity: fidelity threshold
+    :return: the rule set containing only the rules with fidelity greater than the input threshold
     """
     # Creating synthetics data. As the input df does not contain the instances covered by the previous rules,
     # the new instances are not covered by old rules
-    tot_df = synthetic_data_generator(df, n_samples)
+    tot_df = synthetic_data_generator(df.drop(columns=[out_var]), n_samples)
     tot_df[out_var] = np.argmax(model.predict(tot_df), axis=1)
     tot_df = tot_df.merge(new_rule_set, on=rule_columns)
     tot_df = tot_df.drop(columns=['unique_class'])
@@ -175,37 +178,26 @@ def instance_remover(rule, df, column):
     return df
 
 
-def instance_replacer(rule, df, column):
-    # Selecting the indexes of the instances that are not covered by the rules
-    unchanged_df = instance_remover(rule, df, column)
-    changed_df = pd.merge(df, rule[column])
-    n_samples = len(changed_df)
-    for c in column:
-        unique_value = list(set(unchanged_df[c]))
-        changed_df[c] = list(np.random.choice(unique_value, n_samples))
-    df = pd.concat([changed_df, unchanged_df], ignore_index=True)
-    return df
-
-
-def rule_maker(df, x_train, intervals, combo_list, target_var, model):
+def rule_maker(df, intervals, combo_list, target_var, model):
     """
     Creates the IF-THEN rules
     :param df: input dataframe
     :param x_train: training dataset
     :param intervals: list of intervals to build the rules
-    :param col: list of attributes to be analysed
+    :param combo_list: list of attributes to be analysed
     :param target_var: name of dependent variable
+    :param model: trained model
     :return: rules
-    :return: outdf
     """
     outdf = copy.deepcopy(df)
-    new_x_train = copy.deepcopy(x_train)
     # Randomly shuffling the attributes to be analysed
     ret = []
     combo_number = 0
     while combo_number < len(combo_list) and len(outdf) > 0:
         combos = combo_list[combo_number]
+        i = 0
         for combo in combos:
+            i += 1
             attr_list = outdf[list(combo) + [target_var]].groupby(list(combo)).agg(unique_class=(target_var, 'nunique'),
                                                                                    max_class=(target_var, max)
                                                                                    ).reset_index(drop=False)
@@ -214,13 +206,12 @@ def rule_maker(df, x_train, intervals, combo_list, target_var, model):
                 new_col = new_rules.columns.values.tolist()
                 new_col.remove('unique_class')
                 new_col.remove('max_class')
-                new_rules = rule_evaluator(new_x_train, new_col, new_rules, target_var, model, len(outdf), fidelity=0.8)
+                new_rules = rule_evaluator(outdf, new_col, new_rules, target_var, model, len(outdf), fidelity=0.9)
                 if len(new_rules) > 0:
                     outdf = instance_remover(new_rules, outdf, new_col)
-                    new_x_train = instance_replacer(new_rules, new_x_train, new_col)
                     for index, row in new_rules.iterrows():
                         # Evaluate the fidelity of the new rule
-                        new_dict = {'neuron': new_col, 'class': row['max_class'].tolist()}
+                        new_dict = {'columns': new_col, 'class': row['max_class'].tolist()}
                         rule_intervals = []
                         for c in new_col:
                             interv = intervals[c]
@@ -230,29 +221,6 @@ def rule_maker(df, x_train, intervals, combo_list, target_var, model):
                         ret.append(new_dict)
         combo_number += 1
     return ret
-
-
-def rule_applier(indf, iny, rules):
-    """
-    Apply the input rules to the list of labels iny according to the rule conditions on indf
-    :param indf:
-    :param iny:
-    :param over_y:
-    :param rules:
-    :return: iny
-    """
-    indexes = []
-    over_y = np.zeros(len(iny))
-    for r in range(len(rules['neuron'])):
-        x = indf[rules['neuron'][r]]
-        if len(rules['limits']) > 0:
-            ix = list(np.where((x >= rules['limits'][r][0]) & (x <= rules['limits'][r][1]))[0])
-            indexes += ix
-
-    indexes = list(set(indexes))
-    over_y[indexes] = 1
-    iny[indexes] = rules['class']
-    return iny, over_y
 
 
 def column_translator(in_df, target_var, col_number_list):
@@ -265,8 +233,7 @@ def column_translator(in_df, target_var, col_number_list):
     return ret
 
 
-def refne_run(X_train, X_test, y_train, y_test, discrete_attributes, continuous_attributes, label_col, dataset_par,
-              model):
+def refne_run(X_train, X_test, y_test, discrete_attributes, continuous_attributes, label_col, dataset_par, model):
 
     discrete_attributes = column_translator(X_train, label_col, discrete_attributes)
     continuous_attributes = column_translator(X_train, label_col, continuous_attributes)
@@ -277,7 +244,7 @@ def refne_run(X_train, X_test, y_train, y_test, discrete_attributes, continuous_
     ySynth = np.argmax(model.predict(xSynth), axis=1)
     n_class = dataset_par['classes']
 
-    # Discretising the continuous attributes
+    # Discretizing the continuous attributes
     attr_list = xSynth.columns.tolist()
     xSynth[label_col] = ySynth
 
@@ -292,41 +259,12 @@ def refne_run(X_train, X_test, y_train, y_test, discrete_attributes, continuous_
             unique_values = np.unique(xSynth[attr]).tolist()
             interv_dict[attr] = [list(a) for a in zip(unique_values, unique_values)]
 
-    xSynth.to_csv('iris_synthetic.csv')
-    final_rules = rule_maker(xSynth, X_train, interv_dict, all_column_combos, label_col, model)
+    final_rules = rule_maker(xSynth, interv_dict, all_column_combos, label_col, model)
 
-    print(final_rules)
     # Calculation of metrics
     predicted_labels = np.argmax(model.predict(X_test), axis=1)
 
-    num_test_examples = X_test.shape[0]
-    perturbed_data = perturbator(X_test)
-    rule_labels = np.empty(num_test_examples)
-    rule_labels[:] = np.nan
-    perturbed_labels = np.empty(num_test_examples)
-    perturbed_labels[:] = np.nan
-    overlap = np.zeros(num_test_examples)
-
-    for rule in final_rules:
-        neuron = X_test[rule['neuron']]
-        rule_labels, rule_overlap = rule_applier(neuron, rule_labels, rule)
-        overlap += rule_overlap
-        p_neuron = perturbed_data[rule['neuron']]
-        perturbed_labels, _ = rule_applier(p_neuron, rule_labels, rule)
-
-    y_test = y_test.tolist()
-    if len(final_rules) > 0:
-        avg_length = sum([len(item['neuron']) for item in final_rules]) / len(final_rules)
-    else:
-        avg_length = 0
-    completeness = sum(~np.isnan(rule_labels)) / num_test_examples
-    rule_labels[np.where(np.isnan(rule_labels))] = n_class + 10
-    perturbed_labels[np.where(np.isnan(perturbed_labels))] = n_class + 10
-
-    return rule_metrics_calculator(num_test_examples, y_test, rule_labels, predicted_labels,
-                                   perturbed_labels, len(final_rules), completeness, avg_length,
-                                   overlap, dataset_par['classes']
-                                   )
+    return rule_metrics_calculator(X_test, y_test, predicted_labels, final_rules, n_class)
 
 
 

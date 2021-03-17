@@ -2,13 +2,15 @@ from keras.models import load_model
 from keras.utils import to_categorical
 from keras.optimizers import SGD, Adagrad, Adam, Nadam, RMSprop
 import numpy as np
+import pandas as pd
 from sklearn.metrics import accuracy_score
 import copy
-from common_functions import perturbator, rule_metrics_calculator
+from common_functions import perturbator, rule_metrics_calculator, rule_elicitation
 import dictlib
 from sklearn.model_selection import train_test_split
-from rxren_rxncn_functions import rule_pruning, rule_elicitation, ruleset_accuracy, rule_size_calculator, input_delete
-from rxren_rxncn_functions import model_pruned_prediction, prediction_reshape
+from rxren_rxncn_functions import rule_pruning, ruleset_accuracy, input_delete
+from rxren_rxncn_functions import model_pruned_prediction, prediction_reshape, rule_formatter, rule_sorter
+import sys
 
 
 # Functions
@@ -110,67 +112,47 @@ def rule_limits_calculator(c_x, c_y, classified_dict, significant_cols, alpha=0.
             for k in np.unique(c_y):
                 limit_data = c_tot[classified_dict[significant_cols[i]][k]]
                 # Splitting the misclassified input values according to their output classes
-                grouped_miss_class[k] += [{'neuron': i, 'limits': [min(limit_data[:, i]), max(limit_data[:, i])]}]
+                grouped_miss_class[k] += [{'columns': i, 'limits': [min(limit_data[:, i]), max(limit_data[:, i])]}]
     # Eliminate those classes that have empty lists
     grouped_miss_class = {k: v for k, v in grouped_miss_class.items() if len(v) > 0}
     return grouped_miss_class
 
 
-def rule_evaluator(x, y, rule_dict, orig_acc, class_list):
-    ret = copy.deepcopy(rule_dict)
+def rule_evaluator(x, y, rule_list, orig_acc, class_list):
+    ret = copy.deepcopy(rule_list)
     rule_accuracy = copy.deepcopy(orig_acc)
     predicted_y = np.empty(x.shape[0])
     predicted_y[:] = np.NaN
-    for cls, rule_list in rule_dict.items():
-        predicted_y, _ = rule_elicitation(x, predicted_y, rule_list, cls)
+    for rule in rule_list:
+        predicted_y, _ = rule_elicitation(x, predicted_y, rule)
     predicted_y[np.isnan(predicted_y)] = len(class_list) + 10
-    for cls, rule_list in rule_dict.items():
-        print('Working on class: ', cls)
-        ixs = np.where(predicted_y == cls)[0].tolist()
+    for rule_number in range(len(rule_list)):
+        rule = rule_list[rule_number]
+        ixs = np.where(predicted_y == rule['class'])[0].tolist()
         if len(ixs) > 0:
-            for pos in range(len(rule_list)):
-                print(pos)
-                item = rule_list[pos]
-                new_min = min(x[ixs, item['neuron']])
-                new_max = max(x[ixs, item['neuron']])
-                ret[cls][pos] = {'neuron': item['neuron'], 'limits': [new_min, new_max]}
-                new_acc = ruleset_accuracy(x, y, ret[cls], cls, len(np.unique(y)))
-                if new_acc < orig_acc[cls]:
-                    ret[cls][pos] = rule_dict[cls][pos]
+            for pos in range(len(rule['columns'])):
+                new_min = min(x[rule['columns'][pos]].iloc[ixs])
+                new_max = max(x[rule['columns'][pos]].iloc[ixs])
+                ret[rule_number]['limits'][pos] = [new_min, new_max]
+                new_acc = ruleset_accuracy(x, y, ret[rule_number], len(np.unique(y)))
+                if new_acc < orig_acc[rule['class']]:
+                    ret[rule_number]['limits'][pos] = rule_list[rule_number]['limits'][pos]
                 else:
-                    rule_accuracy[cls] = new_acc
+                    rule_accuracy[rule['class']] = new_acc
     return rule_accuracy, ret
-
-
-def rule_sorter(rules, in_df):
-    ret = {}
-    for cls, rule in rules.items():
-        number_covered_instances = 0
-        for item in rule:
-            minimum = item['limits'][0]
-            maximum = item['limits'][1]
-            number_covered_instances += len(in_df[np.logical_and(in_df[:, item['neuron']] >= minimum,
-                                                                 in_df[:, item['neuron']] <= maximum)]
-                                            )
-        ret[cls] = number_covered_instances
-    ret = dict(sorted(ret.items(), key=lambda item: item[1], reverse=True))
-    for cls, rule in ret.items():
-        ret[cls] = rules[cls]
-    return ret
 
 
 def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model):
     # Alpha is set equal to the percentage of input instances belonging to the least-represented class in the dataset
     alpha = 0.1
+    n_class = dataset_par['classes']
     X_test, X_val, y_test, y_val = train_test_split(X_test, y_test, test_size=0.33)
-    print(X_train.shape, X_test.shape, X_val.shape)
 
     column_lst = X_train.columns.tolist()
     column_dict = {i: column_lst[i] for i in range(len(column_lst))}
 
     y = np.concatenate((y_train, y_test), axis=0)
     X_train, X_test, X_val = X_train.to_numpy(), X_test.to_numpy(), X_val.to_numpy()
-    n_classes = dataset_par['classes']
 
     weights = np.array(model.get_weights())
     results = model.predict_classes(X_train)
@@ -194,6 +176,7 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model):
     final_dict = combine_dict_list(miss_dict, corr_dict)
 
     rule_limits = rule_limits_calculator(pruned_x, correcty, final_dict, sig_cols, alpha=alpha)
+    rule_limits = rule_formatter(rule_limits)
 
     if len(rule_limits) > 0:
         insignificant_neurons = [key for key, value in column_dict.items() if value not in list(sig_cols.values())]
@@ -201,44 +184,22 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model):
         X_train, _ = input_delete(insignificant_neurons, X_train)
         X_val, _ = input_delete(insignificant_neurons, X_val)
 
-        if len(rule_limits) > 1:
-            rule_limits, rule_accuracy = rule_pruning(X_val, y_val, rule_limits, n_classes)
-        else:
-            cls = list(rule_limits.keys())[0]
-            rule_accuracy = {cls: ruleset_accuracy(X_val, y_val, rule_limits[cls], cls, n_classes)}
+        rule_limits, rule_accuracy = rule_pruning(X_val, y_val, rule_limits, n_class)
 
-        rule_limits = rule_sorter(rule_limits, X_train)
-        print(rule_limits)
+        final_rules = rule_sorter(rule_limits, X_test, sig_cols)
 
         y_val_predicted = model_pruned_prediction([], X_val, dataset_par, in_weight=pruned_w)
+        X_val = pd.DataFrame(X_val, columns=sig_cols.values())
         rule_simplifier = True
         while rule_simplifier:
-            new_rule_acc, rule_limits = rule_evaluator(X_val, y_val_predicted, rule_limits, rule_accuracy, np.unique(y))
+            new_rule_acc, final_rules = rule_evaluator(X_val, y_val_predicted, final_rules, rule_accuracy, np.unique(y))
             if sum(new_rule_acc.values()) > sum(rule_accuracy.values()):
                 rule_accuracy = new_rule_acc
             else:
                 rule_simplifier = False
-        final_rules = rule_limits
 
-        num_test_examples = X_test.shape[0]
-        perturbed_data = perturbator(X_test)
-        rule_labels = np.empty(num_test_examples)
-        rule_labels[:] = np.nan
-        perturbed_labels = np.empty(num_test_examples)
-        perturbed_labels[:] = np.nan
-        overlap = np.zeros(num_test_examples)
-        for key, rule in final_rules.items():
-            rule_labels, rule_overlap = rule_elicitation(X_test, rule_labels, rule, key)
-            overlap += rule_overlap
-            perturbed_labels, _ = rule_elicitation(perturbed_data, perturbed_labels, rule, key)
+        X_test = pd.DataFrame(X_test, columns=sig_cols.values())
 
-        perturbed_labels[np.where(np.isnan(perturbed_labels))] = n_classes + 10
-        completeness = sum(~np.isnan(rule_labels)) / num_test_examples
-        avg_length, number_rules = rule_size_calculator(final_rules)
-        rule_labels[np.where(np.isnan(rule_labels))] = n_classes + 10
-        return rule_metrics_calculator(num_test_examples, y_test, rule_labels, predicted_labels,
-                                       perturbed_labels, number_rules, completeness, avg_length,
-                                       overlap, dataset_par['classes']
-                                       )
+        return rule_metrics_calculator(X_test, y_test, predicted_labels, final_rules, n_class)
     else:
         return np.zeros(8).tolist()
