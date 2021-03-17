@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score
 import copy
-from common_functions import perturbator, rule_metrics_calculator, rule_elicitation
+from common_functions import perturbator, rule_metrics_calculator, rule_elicitation, attack_definer
 import dictlib
 from sklearn.model_selection import train_test_split
 from rxren_rxncn_functions import rule_pruning, ruleset_accuracy, input_delete
@@ -199,6 +199,8 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model):
                 rule_simplifier = False
 
         X_test = pd.DataFrame(X_test, columns=sig_cols.values())
+
+        attack_list = attack_definer(X_test, final_rules)
 
         return rule_metrics_calculator(X_test, y_test, predicted_labels, final_rules, n_class)
     else:

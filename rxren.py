@@ -5,7 +5,7 @@ from keras.optimizers import SGD, Adagrad, Adam, Nadam
 import numpy as np
 from sklearn.metrics import accuracy_score
 import copy
-from common_functions import perturbator, rule_elicitation, rule_metrics_calculator
+from common_functions import perturbator, rule_elicitation, rule_metrics_calculator, attack_definer
 from rxren_rxncn_functions import rule_pruning, ruleset_accuracy, rule_sorter, input_delete
 from rxren_rxncn_functions import model_pruned_prediction, rule_formatter
 from scipy.stats import mode
@@ -168,4 +168,5 @@ def rxren_run(X_train, X_test, y_train, y_test, dataset_par, model):
     X_test, _ = input_delete(ins_index, X_test)
     X_test = pd.DataFrame(X_test, columns=significant_columns.values())
 
+    attack_list = attack_definer(X_test, final_rules)
     return rule_metrics_calculator(X_test, y_test, predicted_labels, final_rules, n_class)

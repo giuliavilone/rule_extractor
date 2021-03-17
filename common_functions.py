@@ -7,6 +7,7 @@ import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import StratifiedKFold
 from imblearn.over_sampling import SMOTE
+import itertools
 
 
 def vote_db_modifier(in_df):
@@ -162,8 +163,8 @@ def rule_metrics_calculator(in_df, y_test, model_labels, final_rules, n_classes)
     overlap = np.zeros(num_test_examples)
 
     for rule in final_rules:
-        neuron = in_df[rule['columns']]
-        rule_labels, rule_overlap = rule_elicitation(neuron, rule_labels, rule)
+        columns = in_df[rule['columns']]
+        rule_labels, rule_overlap = rule_elicitation(columns, rule_labels, rule)
         overlap += rule_overlap
         p_neuron = perturbed_data[rule['columns']]
         perturbed_labels, _ = rule_elicitation(p_neuron, rule_labels, rule)
@@ -200,3 +201,43 @@ def rule_metrics_calculator(in_df, y_test, model_labels, final_rules, n_classes)
     class_fraction = len(set(labels_considered)) / n_classes
     print("Fraction of classes: " + str(class_fraction))
     return [complete, correctness, fidelity, robustness, rule_n, avg_length, overlap, class_fraction]
+
+
+def attack_definer(in_df, final_rules):
+    ret = []
+    rule_labels = np.zeros(in_df.shape[0])
+    total_cover = []
+    for rule_number in range(len(final_rules)):
+        rule = final_rules[rule_number]
+        columns = in_df[rule['columns']]
+        _, rule_cover = rule_elicitation(columns, rule_labels, rule)
+        rule_cover = {'rule_number': rule_number, 'rule_cover': rule_cover}
+        total_cover.append(rule_cover)
+    total_cover[0]['rule_cover'] = np.array([0, 0, 0, 1, 1, 1, 0, 0])
+    total_cover[1]['rule_cover'] = np.array([0, 0, 1, 1, 1, 1, 0, 0])
+    total_cover.append({'rule_number': 2, 'rule_cover': np.array([0, 0, 1, 1, 1, 1, 0, 0])})
+    total_cover.append({'rule_number': 3, 'rule_cover': np.array([1, 1, 0, 0, 0, 0, 0, 0])})
+    total_cover.append({'rule_number': 4, 'rule_cover': np.array([0, 1, 1, 0, 0, 0, 0, 0])})
+    total_cover.append({'rule_number': 5, 'rule_cover': np.array([0, 0, 0, 0, 0, 0, 1, 1])})
+    for pair in itertools.combinations(total_cover, 2):
+        a, b = pair
+        if (a['rule_cover'] == b['rule_cover']).any():
+            if (a['rule_cover'] == b['rule_cover']).all():
+                ret.append({'source': a['rule_number'], 'target': b['rule_number'], 'type': 'rebuttal'})
+                ret.append({'source': b['rule_number'], 'target': a['rule_number'], 'type': 'rebuttal'})
+            else:
+                comparison = [a['rule_cover'][i] == b['rule_cover'][i] and a['rule_cover'][i] == 1
+                              for i in range(len(a['rule_cover']))]
+                comparison_index = np.argwhere(comparison).reshape(-1)
+                if len(comparison_index) > 0:
+                    a_index = np.where(a['rule_cover'] == 1)[0]
+                    b_index = np.where(b['rule_cover'] == 1)[0]
+                    if (a_index == comparison_index).all():
+                        ret.append({'source': a['rule_number'], 'target': b['rule_number'], 'type': 'undermining'})
+                    elif (b_index == comparison_index).all():
+                        ret.append({'source': b['rule_number'], 'target': a['rule_number'], 'type': 'undermining'})
+                    else:
+                        ret.append({'source': a['rule_number'], 'target': b['rule_number'], 'type': 'rebuttal'})
+                        ret.append({'source': b['rule_number'], 'target': a['rule_number'], 'type': 'rebuttal'})
+    return ret
+
