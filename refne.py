@@ -1,7 +1,7 @@
 import pandas as pd
 from keras.models import load_model
 import numpy as np
-from common_functions import perturbator, rule_metrics_calculator, rule_elicitation, attack_definer
+from common_functions import rule_metrics_calculator, attack_definer
 import random
 import copy
 import itertools
@@ -263,9 +263,10 @@ def refne_run(X_train, X_test, y_test, discrete_attributes, continuous_attribute
 
     # Calculation of metrics
     predicted_labels = np.argmax(model.predict(X_test), axis=1)
-    attack_list = attack_definer(X_test, final_rules)
+    metrics = rule_metrics_calculator(X_test, y_test, predicted_labels, final_rules, n_class)
+    attack_list, final_rules = attack_definer(X_test, final_rules)
 
-    return rule_metrics_calculator(X_test, y_test, predicted_labels, final_rules, n_class)
+    return metrics
 
 
 

@@ -203,6 +203,34 @@ def rule_metrics_calculator(in_df, y_test, model_labels, final_rules, n_classes)
     return [complete, correctness, fidelity, robustness, rule_n, avg_length, overlap, class_fraction]
 
 
+def rule_merger(ruleset, cover_list):
+    """
+    This function checks if there are rules with the same class and list of columns. If this is the case, these rules
+    are merged together and will be treated as 'OR' logical disjunction
+    :param ruleset:
+    :param cover_list:
+    :return:
+    """
+    ix1 = 0
+    while ix1 < len(ruleset):
+        ix2 = ix1 + 1
+        while ix2 < len(ruleset):
+            rule_a, rule_b = ruleset[ix1], ruleset[ix2]
+            if rule_a['class'] == rule_b['class'] and rule_a['columns'] == rule_b['columns']:
+                if type(rule_a['limits'][-1][0]) is not list:
+                    rule_a['limits'] = [rule_a['limits']] + [rule_b['limits']]
+                else:
+                    rule_a['limits'].append(rule_b['limits'])
+                ruleset.pop(ix2)
+                cover_list[ix1]['rule_cover'] += cover_list[ix2]['rule_cover']
+                cover_list[ix1]['rule_cover'][cover_list[ix1]['rule_cover'] > 1] = 1
+                cover_list.pop(ix2)
+            else:
+                ix2 += 1
+        ix1 += 1
+    return ruleset, cover_list
+
+
 def attack_definer(in_df, final_rules):
     ret = []
     rule_labels = np.zeros(in_df.shape[0])
@@ -211,14 +239,10 @@ def attack_definer(in_df, final_rules):
         rule = final_rules[rule_number]
         columns = in_df[rule['columns']]
         _, rule_cover = rule_elicitation(columns, rule_labels, rule)
-        rule_cover = {'rule_number': rule_number, 'rule_cover': rule_cover}
+        rule_cover = {'rule_number': 'R'+str(rule_number), 'rule_cover': rule_cover}
         total_cover.append(rule_cover)
-    total_cover[0]['rule_cover'] = np.array([0, 0, 0, 1, 1, 1, 0, 0])
-    total_cover[1]['rule_cover'] = np.array([0, 0, 1, 1, 1, 1, 0, 0])
-    total_cover.append({'rule_number': 2, 'rule_cover': np.array([0, 0, 1, 1, 1, 1, 0, 0])})
-    total_cover.append({'rule_number': 3, 'rule_cover': np.array([1, 1, 0, 0, 0, 0, 0, 0])})
-    total_cover.append({'rule_number': 4, 'rule_cover': np.array([0, 1, 1, 0, 0, 0, 0, 0])})
-    total_cover.append({'rule_number': 5, 'rule_cover': np.array([0, 0, 0, 0, 0, 0, 1, 1])})
+        rule['rule_number'] = 'R'+str(rule_number)
+    final_rules, total_cover = rule_merger(final_rules, total_cover)
     for pair in itertools.combinations(total_cover, 2):
         a, b = pair
         if (a['rule_cover'] == b['rule_cover']).any():
@@ -229,15 +253,13 @@ def attack_definer(in_df, final_rules):
                 comparison = [a['rule_cover'][i] == b['rule_cover'][i] and a['rule_cover'][i] == 1
                               for i in range(len(a['rule_cover']))]
                 comparison_index = np.argwhere(comparison).reshape(-1)
-                if len(comparison_index) > 0:
-                    a_index = np.where(a['rule_cover'] == 1)[0]
-                    b_index = np.where(b['rule_cover'] == 1)[0]
-                    if (a_index == comparison_index).all():
-                        ret.append({'source': a['rule_number'], 'target': b['rule_number'], 'type': 'undermining'})
-                    elif (b_index == comparison_index).all():
-                        ret.append({'source': b['rule_number'], 'target': a['rule_number'], 'type': 'undermining'})
-                    else:
-                        ret.append({'source': a['rule_number'], 'target': b['rule_number'], 'type': 'rebuttal'})
-                        ret.append({'source': b['rule_number'], 'target': a['rule_number'], 'type': 'rebuttal'})
-    return ret
-
+                a_index = np.where(a['rule_cover'] == 1)[0]
+                b_index = np.where(b['rule_cover'] == 1)[0]
+                if np.array_equal(a_index, comparison_index):
+                    ret.append({'source': a['rule_number'], 'target': b['rule_number'], 'type': 'undermining'})
+                elif np.array_equal(b_index, comparison_index):
+                    ret.append({'source': b['rule_number'], 'target': a['rule_number'], 'type': 'undermining'})
+                else:
+                    ret.append({'source': a['rule_number'], 'target': b['rule_number'], 'type': 'rebuttal'})
+                    ret.append({'source': b['rule_number'], 'target': a['rule_number'], 'type': 'rebuttal'})
+    return ret, final_rules

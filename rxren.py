@@ -1,15 +1,11 @@
 import pandas as pd
-from keras.models import load_model
-from keras.utils import to_categorical
-from keras.optimizers import SGD, Adagrad, Adam, Nadam
 import numpy as np
 from sklearn.metrics import accuracy_score
 import copy
-from common_functions import perturbator, rule_elicitation, rule_metrics_calculator, attack_definer
+from common_functions import rule_elicitation, rule_metrics_calculator, attack_definer
 from rxren_rxncn_functions import rule_pruning, ruleset_accuracy, rule_sorter, input_delete
 from rxren_rxncn_functions import model_pruned_prediction, rule_formatter
 from scipy.stats import mode
-import sys
 
 # Global variables
 TOLERANCE = 0.01
@@ -165,6 +161,7 @@ def rxren_run(X_train, X_test, y_train, y_test, dataset_par, model):
             rule_simplifier = False
 
     final_rules = rule_sorter(rule_limits, X_test, significant_columns)
+
     X_test, _ = input_delete(ins_index, X_test)
     X_test = pd.DataFrame(X_test, columns=significant_columns.values())
 

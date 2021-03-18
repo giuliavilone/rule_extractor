@@ -1,16 +1,12 @@
-from keras.models import load_model
-from keras.utils import to_categorical
-from keras.optimizers import SGD, Adagrad, Adam, Nadam, RMSprop
 import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score
 import copy
-from common_functions import perturbator, rule_metrics_calculator, rule_elicitation, attack_definer
+from common_functions import rule_metrics_calculator, rule_elicitation, attack_definer
 import dictlib
 from sklearn.model_selection import train_test_split
 from rxren_rxncn_functions import rule_pruning, ruleset_accuracy, input_delete
 from rxren_rxncn_functions import model_pruned_prediction, prediction_reshape, rule_formatter, rule_sorter
-import sys
 
 
 # Functions
