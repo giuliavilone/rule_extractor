@@ -104,7 +104,7 @@ def rule_creator(in_df_list, *args):
         rule = {'class': df['class'].unique()[0]}
         df = df.drop(list(args), axis=1)
         rule['columns'] = df.columns.tolist()
-        rule['limits'] = [(df[col].min(), df[col].max()) for col in df.columns.tolist()]
+        rule['limits'] = [[df[col].min(), df[col].max()] for col in df.columns.tolist()]
         rule_set.append(rule)
     return rule_set
 
@@ -158,7 +158,7 @@ def rule_extractor(in_df, label_col, number_clusters=2, linkage='complete', min_
         else:
             group = group.drop(label_col, axis=1)
             rule = {'class': key, 'columns': group.columns.tolist(),
-                    'limits': [(group[col].min(), group[col].max()) for col in group.columns.tolist()]
+                    'limits': [[group[col].min(), group[col].max()] for col in group.columns.tolist()]
                     }
             rule_set.append(rule)
     return rule_set
