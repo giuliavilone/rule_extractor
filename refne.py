@@ -6,7 +6,6 @@ import random
 import copy
 import itertools
 from mysql_queries import mysql_queries_executor
-import sys
 
 
 # Functions
@@ -267,8 +266,7 @@ def refne_run(X_train, X_test, y_test, discrete_attributes, continuous_attribute
     # Calculation of metrics
     predicted_labels = np.argmax(model.predict(X_test), axis=1)
     metrics = rule_metrics_calculator(X_test, y_test, predicted_labels, final_rules, n_class)
-    attack_list, final_rules = attack_definer(X_test, final_rules)
-    # attack_list = [attack_list[0]]
+    attack_list, final_rules = attack_definer(X_test, final_rules, merge_rules=True)
 
     feature_set_name = 'REFNE_' + dataset_par['dataset'] + "_featureset"
     graph_name = 'REFNE_' + dataset_par['dataset'] + "_graph"

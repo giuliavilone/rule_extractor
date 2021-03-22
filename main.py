@@ -30,9 +30,9 @@ for df in range(0, len(parameters)-4):
                        + str(dataset_par['best_model']) + '.h5')
 
     print('---------------------- Working on REFNE -----------------------')
-    # metric_refne = refne_run(X_train, X_test, y_test, disc_attributes, cont_attributes, label_col, dataset_par, model,
-    #                          labels)
-    # metric_list.append(['REFNE'] + metric_refne)
+    metric_refne = refne_run(X_train, X_test, y_test, disc_attributes, cont_attributes, label_col, dataset_par, model,
+                             labels)
+    metric_list.append(['REFNE'] + metric_refne)
 
     print('---------------------- Working on C45 PANE -----------------------')
     # metric_c45 = run_c45_pane(X_train, X_test, y_test, dataset_par, model)
@@ -43,8 +43,8 @@ for df in range(0, len(parameters)-4):
     # metric_list.append(['RXNCM'] + metric_rxncn)
 
     print('---------------------- Working on RxREN -----------------------')
-    metric_rxren = rxren_run(X_train, X_test, y_train, y_test, dataset_par, model, labels)
-    metric_list.append(['RXREN'] + metric_rxren)
+    # metric_rxren = rxren_run(X_train, X_test, y_train, y_test, dataset_par, model, labels)
+    # metric_list.append(['RXREN'] + metric_rxren)
 
     print('---------------------- Working on TREPAN -----------------------')
     # metric_trepan = run_trepan(X_train, X_test, y_train, y_test, disc_attributes, dataset_par, model)

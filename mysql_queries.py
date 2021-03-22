@@ -1,6 +1,5 @@
 from mysql.connector import (connection)
 from mysql.connector import errorcode, Error
-import sys
 
 
 def create_attribute_list(ruleset):
@@ -40,16 +39,16 @@ def argument_formatter(argument):
             for sub_item_number in range(len(item)):
                 sub_item = item[sub_item_number]
                 if sub_item_number == len(item) - 1:
-                    ret += '"' + str(sub_item).replace(" ", "") + ' ' + argument['columns'][sub_item_number] + '")'
+                    ret += '"' + argument['columns'][sub_item_number] + ' ' + str(sub_item).replace(" ", "") + '")'
                 else:
-                    ret += '"' + str(sub_item).replace(" ", "") + ' ' + argument['columns'][sub_item_number] + '" AND '
+                    ret += '"' + argument['columns'][sub_item_number] + ' ' + str(sub_item).replace(" ", "") + '" AND '
             if item_number < len(argument['limits']) - 1:
                 ret += " OR "
         else:
             if item_number == len(argument['limits']) - 1:
-                ret += '"' + str(item).replace(" ", "") + " " + argument['columns'][item_number] + '"'
+                ret += '"' + argument['columns'][item_number] + " " + str(item).replace(" ", "") + '"'
             else:
-                ret += '"' + str(item).replace(" ", "") + " " + argument['columns'][item_number] + '" AND '
+                ret += '"' + argument['columns'][item_number] + " " + str(item).replace(" ", "") + '" AND '
     return ret
 
 
@@ -153,8 +152,7 @@ def create_arguments(conn, feature_set_name, graph_name, ruleset, conclusion_lis
 def mysql_queries_executor(**kwargs):
     """
     Create the MySQL queries to create a new feature-set in the
-    :param ruleset:
-    :param attacks:
+    :param kwargs:
     :return:
     """
     conn = open_connection()

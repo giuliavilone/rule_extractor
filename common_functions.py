@@ -252,7 +252,7 @@ def attack_definer(in_df, final_rules, merge_rules=False):
             comparison_index = np.intersect1d(a_index, b_index)
             if np.array_equal(a_index, b_index) and len(comparison_index) > 0:
                 ret.append({"source": a['rule_number'], "target": b['rule_number'], "type": "rebuttal"})
-                # ret.append({"source": b['rule_number'], "target": a['rule_number'], "type": "rebuttal"})
+                ret.append({"source": b['rule_number'], "target": a['rule_number'], "type": "rebuttal"})
             else:
                 if np.array_equal(a_index, comparison_index):
                     ret.append({"source": a['rule_number'], "target": b['rule_number'], "type": "undercut"})
@@ -260,5 +260,5 @@ def attack_definer(in_df, final_rules, merge_rules=False):
                     ret.append({"source": b['rule_number'], "target": a['rule_number'], "type": "undercut"})
                 elif len(comparison_index) > 0:
                     ret.append({"source": a['rule_number'], "target": b['rule_number'], "type": "rebuttal"})
-                    # ret.append({"source": b['rule_number'], "target": a['rule_number'], "type": "rebuttal"})
+                    ret.append({"source": b['rule_number'], "target": a['rule_number'], "type": "rebuttal"})
     return ret, final_rules
