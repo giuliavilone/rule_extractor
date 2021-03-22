@@ -5,6 +5,8 @@ from common_functions import rule_metrics_calculator, attack_definer
 import random
 import copy
 import itertools
+from mysql_queries import mysql_queries_executor
+import sys
 
 
 # Functions
@@ -115,7 +117,7 @@ def select_random_item(int_list, ex_item_list):
     return new_item
 
 
-def rule_evaluator(df, rule_columns, new_rule_set, out_var, model, n_samples, fidelity=0.0):
+def rule_evaluator(df, rule_columns, new_rule_set, out_var, model, n_samples, fidelity=1):
     """
     Evaluate the fidelity of the new rule
     :param df: input dataframe containing the training samples
@@ -206,7 +208,7 @@ def rule_maker(df, intervals, combo_list, target_var, model):
                 new_col = new_rules.columns.values.tolist()
                 new_col.remove('unique_class')
                 new_col.remove('max_class')
-                new_rules = rule_evaluator(outdf, new_col, new_rules, target_var, model, len(outdf), fidelity=0.9)
+                new_rules = rule_evaluator(outdf, new_col, new_rules, target_var, model, len(outdf), fidelity=1)
                 if len(new_rules) > 0:
                     outdf = instance_remover(new_rules, outdf, new_col)
                     for index, row in new_rules.iterrows():
@@ -233,7 +235,8 @@ def column_translator(in_df, target_var, col_number_list):
     return ret
 
 
-def refne_run(X_train, X_test, y_test, discrete_attributes, continuous_attributes, label_col, dataset_par, model):
+def refne_run(X_train, X_test, y_test, discrete_attributes, continuous_attributes, label_col, dataset_par, model,
+              labels):
 
     discrete_attributes = column_translator(X_train, label_col, discrete_attributes)
     continuous_attributes = column_translator(X_train, label_col, continuous_attributes)
@@ -265,6 +268,12 @@ def refne_run(X_train, X_test, y_test, discrete_attributes, continuous_attribute
     predicted_labels = np.argmax(model.predict(X_test), axis=1)
     metrics = rule_metrics_calculator(X_test, y_test, predicted_labels, final_rules, n_class)
     attack_list, final_rules = attack_definer(X_test, final_rules)
+    # attack_list = [attack_list[0]]
+
+    feature_set_name = 'REFNE_' + dataset_par['dataset'] + "_featureset"
+    graph_name = 'REFNE_' + dataset_par['dataset'] + "_graph"
+    mysql_queries_executor(ruleset=final_rules, attacks=attack_list, conclusions=labels,
+                           feature_set_name=feature_set_name, graph_name=graph_name)
 
     return metrics
 

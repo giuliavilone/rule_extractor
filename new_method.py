@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from keras.models import load_model
 from rxren_rxncn_functions import input_delete, model_pruned_prediction
-from common_functions import dataset_uploader
+from common_functions import dataset_uploader, attack_definer
 from refne import synthetic_data_generator
 from sklearn.cluster import AgglomerativeClustering
 import matplotlib.pyplot as plt
@@ -11,6 +11,8 @@ from sklearn.metrics import accuracy_score
 import copy
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
+from mysql_queries import mysql_queries_executor
+import sys
 
 # These are to remove some of the tensorflow warnings. The code works in any case
 # import os
@@ -208,11 +210,19 @@ print('------------------------------- Final rules -----------------------------
 print(len(rules))
 rule_accuracy, _ = rule_set_evaluator(X, y, rules)
 print('Original accuracy: ', rule_accuracy)
-rules = rule_pruning(rules, rule_accuracy, X, y)
+final_rules = rule_pruning(rules, rule_accuracy, X, y)
 print('------------------------------- Final rules -------------------------------')
-print(len(rules))
-print(rules)
-rule_accuracy, rule_prediction = rule_set_evaluator(X, y, rules)
+print(len(final_rules))
+print(final_rules)
+rule_accuracy, rule_prediction = rule_set_evaluator(X, y, final_rules)
 print('New original accuracy: ', rule_accuracy)
-cluster_plots(X, y)
-cluster_plots(X, rule_prediction.round().astype(int))
+# cluster_plots(X, y)
+# cluster_plots(X, rule_prediction.round().astype(int))
+
+
+attack_list, final_rules = attack_definer(X_train, final_rules)
+
+feature_set_name = 'New_method_' + dataset_par['dataset'] + "_featureset"
+graph_name = 'New_method_' + dataset_par['dataset'] + "_graph"
+mysql_queries_executor(ruleset=final_rules, attacks=attack_list, conclusions=labels,
+                       feature_set_name=feature_set_name, graph_name=graph_name)

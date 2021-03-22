@@ -231,7 +231,7 @@ def rule_merger(ruleset, cover_list):
     return ruleset, cover_list
 
 
-def attack_definer(in_df, final_rules):
+def attack_definer(in_df, final_rules, merge_rules=False):
     ret = []
     rule_labels = np.zeros(in_df.shape[0])
     total_cover = []
@@ -239,27 +239,26 @@ def attack_definer(in_df, final_rules):
         rule = final_rules[rule_number]
         columns = in_df[rule['columns']]
         _, rule_cover = rule_elicitation(columns, rule_labels, rule)
-        rule_cover = {'rule_number': 'R'+str(rule_number), 'rule_cover': rule_cover}
+        rule_cover = {'rule_number': "R"+str(rule_number), 'rule_cover': rule_cover, 'rule_class': rule['class']}
         total_cover.append(rule_cover)
-        rule['rule_number'] = 'R'+str(rule_number)
-    final_rules, total_cover = rule_merger(final_rules, total_cover)
+        rule['rule_number'] = "R"+str(rule_number)
+    if merge_rules:
+        final_rules, total_cover = rule_merger(final_rules, total_cover)
     for pair in itertools.combinations(total_cover, 2):
         a, b = pair
-        if (a['rule_cover'] == b['rule_cover']).any():
-            if (a['rule_cover'] == b['rule_cover']).all():
-                ret.append({'source': a['rule_number'], 'target': b['rule_number'], 'type': 'rebuttal'})
-                ret.append({'source': b['rule_number'], 'target': a['rule_number'], 'type': 'rebuttal'})
+        if a['rule_class'] != b['rule_class']:
+            a_index = np.where(a['rule_cover'] == 1)[0]
+            b_index = np.where(b['rule_cover'] == 1)[0]
+            comparison_index = np.intersect1d(a_index, b_index)
+            if np.array_equal(a_index, b_index) and len(comparison_index) > 0:
+                ret.append({"source": a['rule_number'], "target": b['rule_number'], "type": "rebuttal"})
+                # ret.append({"source": b['rule_number'], "target": a['rule_number'], "type": "rebuttal"})
             else:
-                comparison = [a['rule_cover'][i] == b['rule_cover'][i] and a['rule_cover'][i] == 1
-                              for i in range(len(a['rule_cover']))]
-                comparison_index = np.argwhere(comparison).reshape(-1)
-                a_index = np.where(a['rule_cover'] == 1)[0]
-                b_index = np.where(b['rule_cover'] == 1)[0]
                 if np.array_equal(a_index, comparison_index):
-                    ret.append({'source': a['rule_number'], 'target': b['rule_number'], 'type': 'undermining'})
+                    ret.append({"source": a['rule_number'], "target": b['rule_number'], "type": "undercut"})
                 elif np.array_equal(b_index, comparison_index):
-                    ret.append({'source': b['rule_number'], 'target': a['rule_number'], 'type': 'undermining'})
-                else:
-                    ret.append({'source': a['rule_number'], 'target': b['rule_number'], 'type': 'rebuttal'})
-                    ret.append({'source': b['rule_number'], 'target': a['rule_number'], 'type': 'rebuttal'})
+                    ret.append({"source": b['rule_number'], "target": a['rule_number'], "type": "undercut"})
+                elif len(comparison_index) > 0:
+                    ret.append({"source": a['rule_number'], "target": b['rule_number'], "type": "rebuttal"})
+                    # ret.append({"source": b['rule_number'], "target": a['rule_number'], "type": "rebuttal"})
     return ret, final_rules

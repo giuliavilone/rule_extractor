@@ -7,6 +7,7 @@ import dictlib
 from sklearn.model_selection import train_test_split
 from rxren_rxncn_functions import rule_pruning, ruleset_accuracy, input_delete
 from rxren_rxncn_functions import model_pruned_prediction, prediction_reshape, rule_formatter, rule_sorter
+from mysql_queries import mysql_queries_executor
 
 
 # Functions
@@ -138,7 +139,7 @@ def rule_evaluator(x, y, rule_list, orig_acc, class_list):
     return rule_accuracy, ret
 
 
-def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model):
+def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model, labels):
     # Alpha is set equal to the percentage of input instances belonging to the least-represented class in the dataset
     alpha = 0.1
     n_class = dataset_par['classes']
@@ -195,9 +196,13 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model):
                 rule_simplifier = False
 
         X_test = pd.DataFrame(X_test, columns=sig_cols.values())
+        metrics = rule_metrics_calculator(X_test, y_test, predicted_labels, final_rules, n_class)
+        attack_list, final_rules = attack_definer(X_test, final_rules)
+        feature_set_name = 'RxNCM_' + dataset_par['dataset'] + "_featureset"
+        graph_name = 'RxNCM_' + dataset_par['dataset'] + "_graph"
+        mysql_queries_executor(ruleset=final_rules, attacks=attack_list, conclusions=labels,
+                               feature_set_name=feature_set_name, graph_name=graph_name)
 
-        attack_list = attack_definer(X_test, final_rules)
-
-        return rule_metrics_calculator(X_test, y_test, predicted_labels, final_rules, n_class)
+        return metrics
     else:
         return np.zeros(8).tolist()
