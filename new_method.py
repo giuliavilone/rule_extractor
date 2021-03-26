@@ -112,6 +112,7 @@ def rule_creator(in_df_list, *args):
 def rule_elicitation(x, in_rule):
     original_y = x[LABEL_COL].to_numpy()
     predicted_y = np.empty(len(y))
+    predicted_y[:] = np.nan
     indexes = []
     for item in range(len(in_rule['columns'])):
         minimum = in_rule['limits'][item][0]
@@ -134,12 +135,16 @@ def rule_set_evaluator(x, original_y, rule_set):
     ret = np.empty(len(x))
     for t in predicted_y:
         ret[t[1]] = t[2]
-    ret[np.where(np.isnan(ret))] = len(np.unique(y)) + 10
-    accuracy = accuracy_score(ret.round(), original_y)
-    return accuracy, ret
+    empty_index = list(np.where(np.isnan(ret))[0])
+    if len(empty_index) > 0:
+        accuracy = 0
+    else:
+        # ret[np.where(np.isnan(ret))] = len(np.unique(y)) + 10
+        accuracy = accuracy_score(ret.round(), original_y)
+    return accuracy, ret, empty_index
 
 
-def rule_extractor(in_df, label_col, number_clusters=2, linkage='complete', min_sample=30):
+def rule_extractor(in_df, label_col, number_clusters=2, linkage='complete', min_sample=20):
     rule_set = []
     groups = in_df.groupby(label_col, as_index=False)
     for key, group in groups:
@@ -152,7 +157,7 @@ def rule_extractor(in_df, label_col, number_clusters=2, linkage='complete', min_
                 rule_acc, indexes = rule_elicitation(in_df, rule)
                 if rule_acc < MINIMUM_ACC:
                     new_x = in_df[in_df.index.isin(indexes)]
-                    rule_set += rule_extractor(new_x, label_col)
+                    rule_set += rule_extractor(new_x, label_col, number_clusters=number_clusters)
                 else:
                     rule_set.append(rule)
         else:
@@ -164,13 +169,42 @@ def rule_extractor(in_df, label_col, number_clusters=2, linkage='complete', min_
     return rule_set
 
 
+def complete_rule(in_df, original_y, rule_list):
+    temp_rule_set = copy.deepcopy(rule_list)
+    _, _, empty_index = rule_set_evaluator(in_df, original_y, rule_list)
+    if len(empty_index) > 0:
+        uncovered_instances = in_df.iloc[empty_index]
+        for _, row in uncovered_instances.iterrows():
+            min_dist = []
+            for rule_number in range(len(temp_rule_set)):
+                rule = temp_rule_set[rule_number]
+                if row['class'] == rule['class']:
+                    tot_dist = 0
+                    temp_rule = copy.deepcopy(rule)
+                    for column_number in range(len(rule['columns'])):
+                        element = row[rule['columns'][column_number]]
+                        range_min = rule['limits'][column_number][0]
+                        range_max = rule['limits'][column_number][1]
+                        if element < range_min or element > range_max:
+                            tot_dist += min(abs(element - range_min), abs(element - range_max))
+                            if element < range_min:
+                                temp_rule['limits'][column_number][0] = element
+                            elif element > range_max:
+                                temp_rule['limits'][column_number][1] = element
+                    min_dist.append((tot_dist, rule_number, temp_rule))
+            min_dist.sort(key=lambda x:x[0])
+            rule_to_be_updated = min_dist[0]
+            rule_list[rule_to_be_updated[1]] = rule_to_be_updated[2]
+    return rule_list
+
+
 def rule_pruning(rule_set, original_accuracy, x, original_y):
     new_rules = copy.deepcopy(rule_set)
     ret = []
     item = 0
     while item < len(new_rules):
         rule = new_rules.pop(item)
-        new_accuracy, _ = rule_set_evaluator(x, original_y, new_rules)
+        new_accuracy, _, _ = rule_set_evaluator(x, original_y, new_rules)
         if new_accuracy < original_accuracy:
             ret.append(rule)
             new_rules = [rule] + new_rules
@@ -199,30 +233,33 @@ print(significant_features)
 
 X_train, weights = remove_column(X_train, significant_features, in_weight=weights)
 
-xSynth = synthetic_data_generator(X_train, X_train.shape[0] * 4)
+xSynth = synthetic_data_generator(X_train, X_train.shape[0])
 
-X = xSynth.append(X_train, ignore_index=True)
+X = xSynth.append(X_test, ignore_index=True)
+X = X.append(X_train, ignore_index=True)
 y = np.argmax(model.predict(X), axis=1)
 X[LABEL_COL] = y
-rules = rule_extractor(X, LABEL_COL, number_clusters=2)
+rules = rule_extractor(X, LABEL_COL, number_clusters=3)
+rules = complete_rule(X, y, rules)
 
 print('------------------------------- Final rules -------------------------------')
 print(len(rules))
-rule_accuracy, _ = rule_set_evaluator(X, y, rules)
+rule_accuracy, _, _ = rule_set_evaluator(X, y, rules)
 print('Original accuracy: ', rule_accuracy)
 final_rules = rule_pruning(rules, rule_accuracy, X, y)
 print('------------------------------- Final rules -------------------------------')
 print(len(final_rules))
 print(final_rules)
-rule_accuracy, rule_prediction = rule_set_evaluator(X, y, final_rules)
+rule_accuracy, rule_prediction, _ = rule_set_evaluator(X, y, final_rules)
 print('New original accuracy: ', rule_accuracy)
-# cluster_plots(X, y)
-# cluster_plots(X, rule_prediction.round().astype(int))
+cluster_plots(X, y)
+cluster_plots(X, rule_prediction.round().astype(int))
 
+save_graph = False
+if save_graph:
+    attack_list, final_rules = attack_definer(X_train, final_rules)
 
-attack_list, final_rules = attack_definer(X_train, final_rules)
-
-feature_set_name = 'New_method_' + dataset_par['dataset'] + "_featureset"
-graph_name = 'New_method_' + dataset_par['dataset'] + "_graph"
-mysql_queries_executor(ruleset=final_rules, attacks=attack_list, conclusions=labels,
-                       feature_set_name=feature_set_name, graph_name=graph_name)
+    feature_set_name = 'New_method_' + dataset_par['dataset'] + "_featureset"
+    graph_name = 'New_method_' + dataset_par['dataset'] + "_graph"
+    mysql_queries_executor(ruleset=final_rules, attacks=attack_list, conclusions=labels,
+                           feature_set_name=feature_set_name, graph_name=graph_name)
