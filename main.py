@@ -30,12 +30,12 @@ for df in range(0, len(parameters)-4):
                        + str(dataset_par['best_model']) + '.h5')
 
     print('---------------------- Working on REFNE -----------------------')
-    metric_refne = refne_run(X_train, X_test, y_test, disc_attributes, cont_attributes, label_col, dataset_par, model,
-                             labels)
-    metric_list.append(['REFNE'] + metric_refne)
+    # metric_refne = refne_run(X_train, X_test, y_test, disc_attributes, cont_attributes, label_col, dataset_par, model,
+    #                          labels)
+    # metric_list.append(['REFNE'] + metric_refne)
 
     print('---------------------- Working on C45 PANE -----------------------')
-    # metric_c45 = run_c45_pane(X_train, X_test, y_test, dataset_par, model)
+    metric_c45 = run_c45_pane(X_train, X_test, y_test, dataset_par, model, labels)
     # metric_list.append(['C45 PANE'] + metric_c45)
 
     print('---------------------- Working on RxNCM -----------------------')

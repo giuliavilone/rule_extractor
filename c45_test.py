@@ -4,9 +4,11 @@ from keras.models import load_model
 from keras.optimizers import SGD, Adagrad, Adam, Nadam
 import numpy as np
 from sklearn.metrics import accuracy_score
-from sklearn.tree import DecisionTreeClassifier, export_text, export_graphviz
+from sklearn.tree import DecisionTreeClassifier, export_text, export_graphviz, plot_tree
 from common_functions import perturbator, create_model, model_train, ensemble_predictions, dataset_uploader
 from common_functions import rule_metrics_calculator
+
+
 
 # Functions
 def load_all_models(n_models):
@@ -27,21 +29,18 @@ def load_all_models(n_models):
     return all_models
 
 
-def synthetic_data_generator(inarr, n_samples):
+def synthetic_data_generator(indf, n_samples):
     """
-    Given an input numpy array, the function returns a new array containing random numbers
+    Given an input dataframe, the function returns a new dataframe containing random numbers
     generated within the value ranges of the input attributes.
     :param indf:
     :param n_samples: integer number of samples to be generated
     :return: outdf: of synthetic data
     """
-    outshape = (n_samples, inarr.shape[1])
-    outarr = np.zeros(outshape)
-    for column in range(inarr.shape[1]):
-        minvalue = min(inarr[:, column])
-        maxvalue = max(inarr[:, column])
-        outarr[:, column] = np.round(np.random.uniform(minvalue, maxvalue, n_samples), 1)
-    return outarr
+    outdf = pd.DataFrame()
+    for column in indf.columns.tolist():
+        outdf[column] = np.random.choice(np.unique(indf[column]).tolist(), n_samples)
+    return outdf
 
 
 def print_decision_tree(tree, feature_names=None, offset_unit='    '):
@@ -129,20 +128,22 @@ def run_c45_pane_old(X_train, X_test, y_train, y_test, dataset_par):
     return xTot, yTot
 
 
-def run_c45_pane(X_train, X_test, y_test, dataset_par, model):
-    X_train, X_test = X_train.to_numpy(), X_test.to_numpy()
-    synth_samples = X_train.shape[0] * 2
-    xSynth = synthetic_data_generator(X_train, synth_samples)
-    ySynth = np.argmax(model.predict(xSynth), axis=1)
-    model_res = np.argmax(model.predict(X_train), axis=1)
-    x_tot = np.concatenate((X_train, xSynth), axis=0)
-    y_tot = np.transpose(np.concatenate([model_res, ySynth], axis=0))
-
+def create_tree(in_df, model):
+    synth_samples = in_df.shape[0] * 2
+    x_synth = synthetic_data_generator(in_df, synth_samples)
+    y_synth = np.argmax(model.predict(x_synth), axis=1)
+    model_res = np.argmax(model.predict(in_df), axis=1)
+    x_tot = np.concatenate((in_df, x_synth), axis=0)
+    y_tot = np.transpose(np.concatenate([model_res, y_synth], axis=0))
     clf = DecisionTreeClassifier()
     clf = clf.fit(x_tot, y_tot)
+    return x_tot, y_tot, clf
 
+
+def run_c45_pane(X_train, X_test, y_test, dataset_par, model, labels):
+    print(labels)
+    x_tot, y_tot, clf = create_tree(X_train, model)
     rules = export_text(clf)
-    string_data = export_graphviz(clf, out_file=None)
 
     # Showing the rules
     # print_decision_tree(clf)
@@ -159,8 +160,4 @@ def run_c45_pane(X_train, X_test, y_test, dataset_par, model):
     completeness = len(predicted_labels) / num_test_examples
     depths = get_node_depths(clf.tree_)
     overlap = 0
-
-    ret = rule_metrics_calculator(num_test_examples, y_test, predicted_labels, model_test_labels, perturbed_labels,
-                                  clf.get_n_leaves(), completeness, np.mean(depths), overlap, dataset_par['classes'])
-    return ret
 

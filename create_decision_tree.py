@@ -1,0 +1,127 @@
+import dash
+import dash_core_components as dcc
+import dash_html_components as html
+import dash_bootstrap_components as dbc
+import dash_table
+from dash.dependencies import Input, Output
+import pandas as pd
+import numpy as np
+from common_functions import dataset_uploader
+from c45_test import create_tree
+from keras.models import load_model
+import dash_cytoscape as cyto
+
+
+def create_edges(decision_tree):
+    edges_left = [{'data': {'source': str(i), 'target': decision_tree.tree_.children_left[i]}, 'classes': 'green'}
+                  for i in range(len(decision_tree.tree_.children_left)) if decision_tree.tree_.children_left[i] != -1]
+    edges_right = [{'data': {'source':  str(i), 'target': decision_tree.tree_.children_right[i]}, 'classes': 'red'}
+                   for i in range(len(decision_tree.tree_.children_right))
+                   if decision_tree.tree_.children_right[i] != -1]
+    return edges_left, edges_right
+
+
+def retrieve_fired_nodes(decision_tree, sample):
+    node_indicator = decision_tree.decision_path(sample.reshape(1, -1))
+    return list(node_indicator.indices[node_indicator.indptr[0]:node_indicator.indptr[1]])
+
+
+def create_node_labels(in_df, col_names, class_labels, decision_tree, separator=' <= '):
+    values = [class_labels[np.where(arr[0] == np.amax(arr[0]))[0][0]] for arr in decision_tree.tree_.value]
+    names = [str(col_names[decision_tree.tree_.feature[i]]) + separator + str(round(decision_tree.tree_.threshold[i], 2))
+             if decision_tree.tree_.feature[i] != -2 else values[i] for i in range(len(values))]
+    return names
+
+
+def create_network(in_df, class_labels, col_names, decision_tree, sample=[], **kwargs):
+    if len(sample) > 0:
+        touched_nodes = retrieve_fired_nodes(decision_tree, sample)
+    else:
+        touched_nodes = []
+    color_list = ['#fcc603', '#03c2fc', '#fc03db']
+    ret = []
+    names = create_node_labels(in_df, col_names, class_labels, decision_tree)
+    for i in range(len(names)):
+        if i in touched_nodes:
+            ret += [{'data': {'id': str(i), 'label': names[i]}, 'classes': 'orange'}]
+        else:
+            if names[i] in class_labels:
+                color_number = class_labels.index(names[i])
+                ret += [{'data': {'id': str(i), 'label': names[i]}, 'classes': 'color' + str(color_number)}]
+            else:
+                ret += [{'data': {'id': str(i), 'label': names[i]}}]
+    edges_left, edges_right = create_edges(decision_tree)
+    return ret + edges_left + edges_right
+
+
+def node_style():
+    color_list = ['#fcc603', '#03c2fc', '#fc03db']
+    node_styles = [{'selector': '.color' + str(i), 'style': {'background-color': color_list[i]}}
+                   for i in range(len(color_list))]
+    return node_styles
+
+
+# Interface
+# external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
+parameters = pd.read_csv('datasets-UCI/UCI_csv/summary.csv')
+label_col = 'class'
+data_path = 'datasets-UCI/UCI_csv/'
+dataset_par = parameters.iloc[0]
+X_train, X_test, _, _, labels, _, _ = dataset_uploader(dataset_par, data_path, cross_split=3, apply_smothe=False)
+X_train, X_test = X_train[0], X_test[0]
+column_height = '800px'
+columns = X_train.columns.tolist()
+model = load_model('trained_models/trained_model_' + dataset_par['dataset'] + '_'
+                   + str(dataset_par['best_model']) + '.h5')
+x_tot, y_tot, clf = create_tree(X_train, model)
+
+
+# app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+app.layout = html.Div(children=[
+    dbc.Row([
+        dbc.Col(html.Div([
+            cyto.Cytoscape(
+                id='cytoscape-graph',
+                layout={'name': 'cose'},
+                style={'height': column_height},
+                elements=create_network(x_tot, labels, columns, clf),
+                stylesheet=[
+                    {
+                        'selector': 'node',
+                        'style': {'content': 'data(label)'}
+                    },
+                    {
+                        'selector': '.red',
+                        'style': {'line-color': 'red'}
+                    },
+                    {
+                        'selector': '.green',
+                        'style': {'line-color': 'green'}
+                    }] + node_style()
+            )
+            ]), width=7
+        ),
+        dbc.Col(html.Div([
+            html.H4("Dataset: " + dataset_par['dataset'], style={'color': '#21618C'}),
+            dcc.Tab(label='Fixed costs', children=[
+                dash_table.DataTable(
+                    id='dataset_' + dataset_par['dataset'],
+                    columns=[{"name": i, "id": i} for i in X_test.columns],
+                    data=X_test.to_dict('records'),
+                    filter_action='native',
+                    page_size=30,
+                    style_table={'height': column_height, 'overflowY': 'auto'},
+                    fixed_rows={'headers': True},
+                    editable=False,
+                    row_selectable='single'
+                )
+            ])
+        ]), width=5
+        )
+    ], align="centre", justify="centre", no_gutters=False)
+])
+
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
