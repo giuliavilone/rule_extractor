@@ -17,7 +17,8 @@ def create_edges(tree_node_list, touched_nodes, color_name):
     for i in range(len(tree_node_list)):
         if tree_node_list[i] != -1:
             if i in touched_nodes and tree_node_list[i] in touched_nodes:
-                ret += [{'data': {'source': str(i), 'target': tree_node_list[i]}, 'classes': 'orange'}]
+                # ret += [{'data': {'source': str(i), 'target': tree_node_list[i]}, 'classes': 'orange'}]
+                ret += [{'data': {'source': str(i), 'target': tree_node_list[i]}, 'classes': color_name}]
             else:
                 if len(touched_nodes) > 0:
                     ret += [{'data': {'source': str(i), 'target': tree_node_list[i]}, 'classes': 'greyed_out'}]
@@ -67,7 +68,7 @@ def node_style():
     color_list = ['#F923C3', '#FD611D', '#841DFD']
     node_styles = [{'selector': '.color' + str(i), 'style': {'background-color': color_list[i]}}
                    for i in range(len(color_list))]
-    node_styles +=[{'selector': '.color_base', 'style': {'background-color': '#76C5C8'}}]
+    node_styles += [{'selector': '.color_base', 'style': {'background-color': '#76C5C8'}}]
     return node_styles
 
 
@@ -124,7 +125,9 @@ app.layout = html.Div(children=[
                                   'shape': 'rectangle',
                                   'line-color': 'orange',
                                   'target-arrow-color': 'orange',
-                                  'target-arrow-shape': 'orange'
+                                  'target-arrow-shape': 'orange',
+                                  'font-size': '24px',
+                                  'color': '#C20505'
                                   }
                     },
                     {
@@ -132,13 +135,15 @@ app.layout = html.Div(children=[
                         'style': {'background-color': '#C6C6C6',
                                   'line-color': '#C6C6C6',
                                   'target-arrow-color': '#C6C6C6',
-                                  'target-arrow-shape': '#C6C6C6'
+                                  'target-arrow-shape': '#C6C6C6',
+                                  'color': '#C6C6C6'
                                   }
                     }] + node_style()
             )
             ]), width=7
         ),
         dbc.Col(html.Div([
+            html.Br(),
             html.H4("Dataset: " + dataset_par['dataset'], style={'color': '#21618C'}),
             dcc.Tab(label='Fixed costs', children=[
                 dash_table.DataTable(
@@ -152,7 +157,15 @@ app.layout = html.Div(children=[
                     editable=False,
                     row_selectable='single'
                 )
-            ])
+            ]),
+            html.Br(),
+            html.Div(id='tree_inference',
+                     style={'font-size': '24px',
+                            'border': '2px solid #939596',
+                            'width': '20em',
+                            'padding': '8px 12px',
+                            'margin-top': '1em',
+                            'color': '#21618C'}),
         ]), width=5
         )
     ], align="centre", justify="centre", no_gutters=False)
@@ -187,6 +200,23 @@ def update_graph(rows, derived_virtual_selected_rows, elements):
         select_data = dff.iloc[derived_virtual_selected_rows].to_numpy()
         elements = create_network(labels, columns, clf, sample=select_data)
     return elements
+
+
+@app.callback(
+    Output('tree_inference', "children"),
+    Input('datatable-interactivity', "derived_virtual_data"),
+    Input('datatable-interactivity', "derived_virtual_selected_rows"),
+)
+def update_graph(rows, derived_virtual_selected_rows):
+    if derived_virtual_selected_rows is None:
+        derived_virtual_selected_rows = []
+    dff = None if rows is None else pd.DataFrame(rows)
+    inference = ''
+    if len(derived_virtual_selected_rows) > 0:
+        select_data = dff.iloc[derived_virtual_selected_rows].to_numpy()
+        final_node = retrieve_fired_nodes(clf, select_data)[-1]
+        inference = create_node_labels(dff.columns.tolist(), labels, clf)[final_node]
+    return 'Inference: {}'.format(inference)
 
 
 if __name__ == '__main__':
