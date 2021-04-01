@@ -10,6 +10,7 @@ from common_functions import dataset_uploader
 from c45_test import create_tree
 from keras.models import load_model
 import dash_cytoscape as cyto
+import copy
 
 
 def create_edges(tree_node_list, touched_nodes, color_name):
@@ -78,21 +79,37 @@ parameters = pd.read_csv('datasets-UCI/UCI_csv/summary.csv')
 label_col = 'class'
 data_path = 'datasets-UCI/UCI_csv/'
 dataset_par = parameters.iloc[0]
-X_train, X_test, _, _, labels, _, _ = dataset_uploader(dataset_par, data_path, cross_split=3, apply_smothe=False)
-X_train, X_test = X_train[0], X_test[0]
+X_train, X_test, _, y_test, labels, _, _ = dataset_uploader(dataset_par, data_path, cross_split=3, apply_smothe=False)
+X_train, X_test, y_test = X_train[0], X_test[0], y_test[0]
 column_height = '800px'
 columns = X_train.columns.tolist()
 model = load_model('trained_models/trained_model_' + dataset_par['dataset'] + '_'
                    + str(dataset_par['best_model']) + '.h5')
 x_tot, y_tot, clf = create_tree(X_train, model)
+df_display = copy.deepcopy(X_test)
+df_display['Ground truth'] = [labels[i] for i in y_test]
+y_predicted = np.argmax(model.predict(X_test), axis=1)
+df_display['Model prediction'] = [labels[i] for i in y_predicted ]
+
 
 graph_elements = create_network(labels, columns, clf)
 
 # app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 app.layout = html.Div(children=[
+    html.H2("Explainable Artificial Intelligence - a novel framework", style={'color': '#1A5276',
+                                                                              'margin-left': '1em',
+                                                                              'margin-top': '0.5em'}),
     dbc.Row([
         dbc.Col(html.Div([
+            html.Br(),
+            html.H4("Graph of the decision tree", style={'color': '#21618C', 'margin-left': '2em'}, id='graph_title'),
+            dbc.Tooltip(
+                "This is a graph visualization of the decision tree mimicking the logic followed by an "
+                "underlying model.",
+                target='graph_title',
+                style={'background-color': '#5D5D5D'}
+            ),
             cyto.Cytoscape(
                 id='cytoscape-graph',
                 layout={'name': 'cose'},
@@ -140,24 +157,31 @@ app.layout = html.Div(children=[
                                   }
                     }] + node_style()
             )
-            ]), width=7
+            ]), width=6
         ),
         dbc.Col(html.Div([
             html.Br(),
-            html.H4("Dataset: " + dataset_par['dataset'], style={'color': '#21618C'}),
-            dcc.Tab(label='Fixed costs', children=[
-                dash_table.DataTable(
-                    id='datatable-interactivity',
-                    columns=[{"name": i, "id": i} for i in X_test.columns],
-                    data=X_test.to_dict('records'),
-                    filter_action='native',
-                    page_size=30,
-                    style_table={'height': column_height, 'overflowY': 'auto'},
-                    fixed_rows={'headers': True},
-                    editable=False,
-                    row_selectable='single'
-                )
-            ]),
+            html.H4("Dataset: " + dataset_par['dataset'], style={'color': '#21618C'}, id="dataset_title"),
+            dbc.Tooltip(
+                "Tabular visualization of the input dataset. Select a row to highlight on the graph the rule related"
+                "to that sample.",
+                target='dataset_title',
+                placement="left",
+                style={'background-color': '#5D5D5D'}
+            ),
+            dash_table.DataTable(
+                id='datatable-interactivity',
+                columns=[{"name": i, "id": i} for i in df_display.columns],
+                data=df_display.to_dict('records'),
+                filter_action='native',
+                page_size=30,
+                style_table={'height': column_height, 'overflowY': 'auto'},
+                style_cell_conditional=[{'if': {'column_id': 'Ground truth'}, 'width': '18%'},
+                                        {'if': {'column_id': 'Model prediction'}, 'width': '18%'}],
+                fixed_rows={'headers': True},
+                editable=False,
+                row_selectable='single'
+            ),
             html.Br(),
             html.Div(id='tree_inference',
                      style={'font-size': '24px',
@@ -165,8 +189,15 @@ app.layout = html.Div(children=[
                             'width': '20em',
                             'padding': '8px 12px',
                             'margin-top': '1em',
-                            'color': '#21618C'}),
-        ]), width=5
+                            'color': 'white',
+                            'background-color': '#1A5276'}),
+            dbc.Tooltip(
+                "This box contains the inference made by the rule fired by a selected sample.",
+                target='tree_inference',
+                placement="left",
+                style={'background-color': '#5D5D5D'}
+            ),
+        ]), width=6
         )
     ], align="centre", justify="centre", no_gutters=False)
 ])
@@ -195,7 +226,9 @@ def update_styles(selected_rows=[]):
 def update_graph(rows, derived_virtual_selected_rows, elements):
     if derived_virtual_selected_rows is None:
         derived_virtual_selected_rows = []
-    dff = None if rows is None else pd.DataFrame(rows)
+    dff = pd.DataFrame() if rows is None else pd.DataFrame(rows)
+    if len(dff) > 0 and 'Ground truth' in dff.columns.tolist():
+        dff = dff.drop(['Ground truth', 'Model prediction'], axis=1)
     if len(derived_virtual_selected_rows) > 0:
         select_data = dff.iloc[derived_virtual_selected_rows].to_numpy()
         elements = create_network(labels, columns, clf, sample=select_data)
@@ -207,10 +240,12 @@ def update_graph(rows, derived_virtual_selected_rows, elements):
     Input('datatable-interactivity', "derived_virtual_data"),
     Input('datatable-interactivity', "derived_virtual_selected_rows"),
 )
-def update_graph(rows, derived_virtual_selected_rows):
+def calculate_inference(rows, derived_virtual_selected_rows):
     if derived_virtual_selected_rows is None:
         derived_virtual_selected_rows = []
-    dff = None if rows is None else pd.DataFrame(rows)
+    dff = pd.DataFrame() if rows is None else pd.DataFrame(rows)
+    if len(dff) > 0 and 'Ground truth' in dff.columns.tolist():
+        dff = dff.drop(['Ground truth', 'Model prediction'], axis=1)
     inference = ''
     if len(derived_virtual_selected_rows) > 0:
         select_data = dff.iloc[derived_virtual_selected_rows].to_numpy()
