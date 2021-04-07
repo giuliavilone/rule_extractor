@@ -87,9 +87,9 @@ model = load_model('trained_models/trained_model_' + dataset_par['dataset'] + '_
                    + str(dataset_par['best_model']) + '.h5')
 x_tot, y_tot, clf = create_tree(X_train, model)
 df_display = copy.deepcopy(X_test)
-df_display['Ground truth'] = [labels[i] for i in y_test]
+df_display['Observed class'] = [labels[i] for i in y_test]
 y_predicted = np.argmax(model.predict(X_test), axis=1)
-df_display['Model prediction'] = [labels[i] for i in y_predicted ]
+df_display['Model predicted class'] = [labels[i] for i in y_predicted ]
 
 
 graph_elements = create_network(labels, columns, clf)
@@ -176,8 +176,8 @@ app.layout = html.Div(children=[
                 filter_action='native',
                 page_size=30,
                 style_table={'height': column_height, 'overflowY': 'auto'},
-                style_cell_conditional=[{'if': {'column_id': 'Ground truth'}, 'width': '18%'},
-                                        {'if': {'column_id': 'Model prediction'}, 'width': '18%'}],
+                style_cell_conditional=[{'if': {'column_id': 'Observed class'}, 'width': '18%'},
+                                        {'if': {'column_id': 'Model predicted class'}, 'width': '22%'}],
                 fixed_rows={'headers': True},
                 editable=False,
                 row_selectable='single'
@@ -227,8 +227,8 @@ def update_graph(rows, derived_virtual_selected_rows, elements):
     if derived_virtual_selected_rows is None:
         derived_virtual_selected_rows = []
     dff = pd.DataFrame() if rows is None else pd.DataFrame(rows)
-    if len(dff) > 0 and 'Ground truth' in dff.columns.tolist():
-        dff = dff.drop(['Ground truth', 'Model prediction'], axis=1)
+    if len(dff) > 0 and 'Observed class' in dff.columns.tolist():
+        dff = dff.drop(['Observed class', 'Model predicted class'], axis=1)
     if len(derived_virtual_selected_rows) > 0:
         select_data = dff.iloc[derived_virtual_selected_rows].to_numpy()
         elements = create_network(labels, columns, clf, sample=select_data)
@@ -244,8 +244,8 @@ def calculate_inference(rows, derived_virtual_selected_rows):
     if derived_virtual_selected_rows is None:
         derived_virtual_selected_rows = []
     dff = pd.DataFrame() if rows is None else pd.DataFrame(rows)
-    if len(dff) > 0 and 'Ground truth' in dff.columns.tolist():
-        dff = dff.drop(['Ground truth', 'Model prediction'], axis=1)
+    if len(dff) > 0 and 'Observed class' in dff.columns.tolist():
+        dff = dff.drop(['Observed class', 'Model predicted class'], axis=1)
     inference = ''
     if len(derived_virtual_selected_rows) > 0:
         select_data = dff.iloc[derived_virtual_selected_rows].to_numpy()
