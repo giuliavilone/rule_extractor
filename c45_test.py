@@ -7,7 +7,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.tree import DecisionTreeClassifier, export_text, export_graphviz, plot_tree
 from common_functions import perturbator, create_model, model_train, ensemble_predictions, dataset_uploader
 from common_functions import rule_metrics_calculator
-
+import sys
 
 
 # Functions
@@ -100,8 +100,7 @@ def run_c45_pane_old(X_train, X_test, y_train, y_test, dataset_par):
     for member in range(n_members):
         # define model
         model = create_model(X_train, dataset_par['classes'], dataset_par['neurons'], eval(dataset_par['optimizer']),
-                             dataset_par['init_mode'], dataset_par['activation'], dataset_par['dropout_rate'],
-                             weight_constraint=eval(dataset_par['weight_constraint'])
+                             dataset_par['init_mode'], dataset_par['activation'], dataset_par['dropout_rate']
                              )
         model_train(X_train, to_categorical(y_train, num_classes=dataset_par['classes']),
                     X_test, to_categorical(y_test, num_classes=dataset_par['classes']), model,
@@ -140,6 +139,32 @@ def create_tree(in_df, model):
     return x_tot, y_tot, clf
 
 
+def metric_calculator(rule_class, original_class, model_class, perturbed_class, rule_depths, n_classes, data_len):
+    correct = 0
+    fidel = 0
+    rob = 0
+    for i in range(0, data_len):
+        fidel += (rule_class[i] == model_class[i])
+        correct += (rule_class[i] == original_class[i])
+        rob += (rule_class[i] == perturbed_class[i])
+
+    correctness = correct / data_len
+    print("Correctness of the ruleset is: " + str(correctness))
+    fidelity = fidel / data_len
+    print("Fidelity of the ruleset is: " + str(fidelity))
+    robustness = rob / data_len
+    print("Robustness of the ruleset is: " + str(robustness))
+    rule_n = len(rule_depths)
+    print("Number of rules : " + str(rule_n))
+    avg_length = np.average(rule_depths)
+    print("Average rule length: " + str(avg_length))
+    labels_considered = set(rule_class)
+    labels_considered.discard(n_classes + 10)
+    class_fraction = len(set(labels_considered)) / n_classes
+    print("Fraction of classes: " + str(class_fraction))
+    return [1.0, correctness, fidelity, robustness, rule_n, avg_length, 0, class_fraction]
+
+
 def run_c45_pane(X_train, X_test, y_test, dataset_par, model, labels):
     print(labels)
     x_tot, y_tot, clf = create_tree(X_train, model)
@@ -147,8 +172,6 @@ def run_c45_pane(X_train, X_test, y_test, dataset_par, model, labels):
 
     # Showing the rules
     # print_decision_tree(clf)
-    # print(rules)
-    # print(string_data)
 
     predicted_labels = clf.predict(X_test)
     model_test_labels = np.argmax(model.predict(X_test), axis=1)
@@ -157,7 +180,7 @@ def run_c45_pane(X_train, X_test, y_test, dataset_par, model, labels):
     perturbed_labels = clf.predict(perturbed_data)
 
     num_test_examples = X_test.shape[0]
-    completeness = len(predicted_labels) / num_test_examples
     depths = get_node_depths(clf.tree_)
-    overlap = 0
 
+    return metric_calculator(predicted_labels, y_test, model_test_labels, perturbed_labels, depths, len(labels),
+                             num_test_examples)

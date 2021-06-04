@@ -9,17 +9,19 @@ from tensorflow.keras.layers import Dropout
 from tensorflow.keras.wrappers.scikit_learn import KerasClassifier
 from keras.constraints import maxnorm
 from sklearn.preprocessing import LabelEncoder
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 
 # fix random seed for reproducibility
-seed = 7
-numpy.random.seed(seed)
+# seed = 7
+# numpy.random.seed(seed)
 # load dataset
 le = LabelEncoder()
 load_arff = False
 if load_arff:
     dataset, meta = arff.loadarff('datasets-UCI/UCI/waveform-5000.arff')
-    label_col = 'class'
+    label_col = 'satisfaction'
     dataset = pd.DataFrame(dataset)
     dataset = dataset.dropna()
 
@@ -32,12 +34,14 @@ if load_arff:
     X = dataset.drop(columns=[label_col]).to_numpy()
     Y = le.fit_transform(dataset[label_col].tolist())
 else:
-    dataset = pd.read_csv('datasets-UCI/UCI_csv/heart.csv')
+    dataset = pd.read_csv('datasets-UCI/new_rules/hotel_bookings.csv')
+    label_col = 'reservation_status'
+    initial_batch_size = 1000
     col_types = dataset.dtypes
     for index, value in col_types.items():
         if value in ('object', 'bool'):
             dataset[index] = le.fit_transform(dataset[index].tolist())
-    label_col = 'class'
+
     # split into input (X) and output (Y) variables
     # dataset = dataset.drop(columns=['sequence_name'])
     X = dataset.drop(columns=[label_col]).to_numpy()
@@ -48,6 +52,7 @@ OUT_CLASS = len(set(Y))
 print(X.shape)
 print(set(Y))
 print(len(set(Y)))
+
 
 # -------------- Tuning the optimizer -----------------#
 # Function to create model, required for KerasClassifier
@@ -62,7 +67,7 @@ def create_model(neurons=20, optimizer ='adam'):
 
 
 # create model
-model = KerasClassifier(build_fn=create_model, epochs=50, batch_size=50, verbose=0)
+model = KerasClassifier(build_fn=create_model, epochs=50, batch_size=initial_batch_size, verbose=0)
 # define the grid search parameters
 optimizer = ['Adam', 'Adagrad', 'Adadelta', 'Adamax', 'Nadam', 'SGD', 'RMSprop']
 param_grid = dict(optimizer=optimizer)
@@ -92,7 +97,7 @@ def create_model2(neurons=20, optimizer=best_optimizer, init_mode='uniform'):
 
 
 # create model
-model = KerasClassifier(build_fn=create_model2, epochs=50, batch_size=50, verbose=0)
+model = KerasClassifier(build_fn=create_model2, epochs=50, batch_size=initial_batch_size, verbose=0)
 # define the grid search parameters
 init_mode = ['uniform', 'lecun_uniform', 'normal', 'zero', 'glorot_normal', 'glorot_uniform', 'he_normal', 'he_uniform']
 param_grid = dict(init_mode=init_mode)
@@ -122,7 +127,7 @@ def create_model3(neurons=20, optimizer=best_optimizer, init_mode=best_init_mode
 
 
 # create model
-model = KerasClassifier(build_fn=create_model3, epochs=50, batch_size=50, verbose=0)
+model = KerasClassifier(build_fn=create_model3, epochs=50, batch_size=initial_batch_size, verbose=0)
 # define the grid search parameters
 activation = ['relu', 'softmax', 'softplus', 'softsign', 'tanh', 'sigmoid', 'hard_sigmoid', 'linear']
 param_grid = dict(activation=activation)
@@ -155,7 +160,7 @@ def create_model4(neurons=20, optimizer=best_optimizer, init_mode=best_init_mode
 
 
 # create model
-model = KerasClassifier(build_fn=create_model4, epochs=50, batch_size=50, verbose=0)
+model = KerasClassifier(build_fn=create_model4, epochs=50, batch_size=initial_batch_size, verbose=0)
 # define the grid search parameters
 weight_constraint = [1, 2, 3, 4, 5]
 dropout_rate = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
@@ -192,8 +197,9 @@ def create_model5(neurons=20, optimizer=best_optimizer, init_mode=best_init_mode
 # create model
 model = KerasClassifier(build_fn=create_model5, verbose=0)
 # define the grid search parameters
-batch_size = [1, 2, 5, 10, 20, 50]
-epochs = [10, 50]
+# batch_size = [1, 2, 5, 10, 20, 50]
+batch_size = [50, 100, 500, 1000]
+epochs = [50]
 param_grid = dict(batch_size=batch_size, epochs=epochs)
 grid = GridSearchCV(estimator=model, param_grid=param_grid, n_jobs=-1, cv=5)
 grid_result = grid.fit(X, Y)

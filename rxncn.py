@@ -3,6 +3,7 @@ import pandas as pd
 from sklearn.metrics import accuracy_score
 import copy
 from common_functions import rule_metrics_calculator, rule_elicitation, attack_definer
+from common_functions import save_list, create_empty_file
 import dictlib
 from sklearn.model_selection import train_test_split
 from rxren_rxncn_functions import rule_pruning, ruleset_accuracy, input_delete
@@ -40,6 +41,7 @@ def network_pruning(w, correct_x, correct_y, test_x, test_y, accuracy, columns, 
     significant_cols = copy.deepcopy(columns)
     theta = 0
     pruning = True
+    miss_classified_dict = {}
     while pruning:
         error_list = []
         miss_classified_dict = {}
@@ -105,8 +107,8 @@ def rule_limits_calculator(c_x, c_y, classified_dict, significant_cols, alpha=0.
     for i in range(c_x.shape[1]):
         mp = sum([len(value) for key, value in classified_dict[significant_cols[i]].items()])
         ucm_class = [len(c_tot[classified_dict[significant_cols[i]][k]]) for k in np.unique(c_y)]
-        if min(ucm_class) > (mp * alpha):
-            for k in np.unique(c_y):
+        for k in np.unique(c_y):
+            if ucm_class[k] > (mp * alpha):
                 limit_data = c_tot[classified_dict[significant_cols[i]][k]]
                 # Splitting the misclassified input values according to their output classes
                 grouped_miss_class[k] += [{'columns': i, 'limits': [min(limit_data[:, i]), max(limit_data[:, i])]}]
@@ -139,7 +141,7 @@ def rule_evaluator(x, y, rule_list, orig_acc, class_list):
     return rule_accuracy, ret
 
 
-def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model, labels):
+def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model, save_graph):
     # Alpha is set equal to the percentage of input instances belonging to the least-represented class in the dataset
     alpha = 0.1
     n_class = dataset_par['classes']
@@ -155,7 +157,7 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model, labels):
     results = model.predict_classes(X_train)
 
     # This will be used for calculating the final metrics
-    predicted_labels = prediction_reshape(model.predict(X_test))
+    predicted_labels = prediction_reshape(model.predict(np.concatenate([X_train, X_test, X_val], axis=0)))
 
     correctX = X_train[[results[i] == y_train[i] for i in range(len(y_train))]]
     print('Number of correctly classified examples', correctX.shape)
@@ -169,8 +171,8 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model, labels):
     miss_dict, pruned_x, pruned_w, err, sig_cols = network_pruning(weights, correctX, correcty, X_val, y_val,
                                                                    test_acc, column_dict, in_item=dataset_par)
 
-    corr_dict = correct_examples_finder(pruned_x, correcty, dataset_par, sig_cols, in_weight=pruned_w)
-    final_dict = combine_dict_list(miss_dict, corr_dict)
+    correct_dict = correct_examples_finder(pruned_x, correcty, dataset_par, sig_cols, in_weight=pruned_w)
+    final_dict = combine_dict_list(miss_dict, correct_dict)
 
     rule_limits = rule_limits_calculator(pruned_x, correcty, final_dict, sig_cols, alpha=alpha)
     rule_limits = rule_formatter(rule_limits)
@@ -180,6 +182,8 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model, labels):
         X_test, _ = input_delete(insignificant_neurons, X_test)
         X_train, _ = input_delete(insignificant_neurons, X_train)
         X_val, _ = input_delete(insignificant_neurons, X_val)
+        X_tot = np.concatenate([X_train, X_test, X_val], axis=0)
+        y_tot = np.concatenate([y_train, y_test, y_val], axis=0)
 
         rule_limits, rule_accuracy = rule_pruning(X_val, y_val, rule_limits, n_class)
 
@@ -195,13 +199,19 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model, labels):
             else:
                 rule_simplifier = False
 
-        X_test = pd.DataFrame(X_test, columns=sig_cols.values())
-        metrics = rule_metrics_calculator(X_test, y_test, predicted_labels, final_rules, n_class)
-        attack_list, final_rules = attack_definer(X_test, final_rules)
-        feature_set_name = 'RxNCM_' + dataset_par['dataset'] + "_featureset"
-        graph_name = 'RxNCM_' + dataset_par['dataset'] + "_graph"
-        mysql_queries_executor(ruleset=final_rules, attacks=attack_list, conclusions=labels,
-                               feature_set_name=feature_set_name, graph_name=graph_name)
+        X_tot = pd.DataFrame(X_tot, columns=sig_cols.values())
+        # print(final_rules)
+        metrics = rule_metrics_calculator(X_tot, y_tot, predicted_labels, final_rules, n_class)
+        if save_graph:
+            attack_list, final_rules = attack_definer(X_tot, final_rules)
+            create_empty_file('RxNCM_' + dataset_par['dataset'] + "_attack_list")
+            save_list(attack_list, 'RxNCM_' + dataset_par['dataset'] + "_attack_list")
+            create_empty_file('RxNCM_' + dataset_par['dataset'] + "_final_rules")
+            save_list(final_rules, 'RxNCM_' + dataset_par['dataset'] + "_final_rules")
+            # feature_set_name = 'RxNCM_' + dataset_par['dataset'] + "_featureset"
+            # graph_name = 'RxNCM_' + dataset_par['dataset'] + "_graph"
+            # mysql_queries_executor(ruleset=final_rules, attacks=attack_list, conclusions=labels,
+            #                       feature_set_name=feature_set_name, graph_name=graph_name)
 
         return metrics
     else:

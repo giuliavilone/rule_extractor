@@ -87,8 +87,8 @@ def data_importer(file_to_be_imported, file_name, remove_columns=True):
                           }
 
     ret_df = pd.read_csv(file_to_be_imported)
-    ret_class = le.fit_transform(ret_df['class'].tolist())
-    ret_df = ret_df.drop(columns=['class'])
+    ret_class = le.fit_transform(ret_df['reservation_status'].tolist())
+    ret_df = ret_df.drop(columns=['reservation_status'])
     if remove_columns:
         if file_name in feat_to_be_deleted.keys():
             columns_to_be_deleted = [item for item in ret_df.columns.tolist() if item in feat_to_be_deleted[file_name]]
@@ -96,7 +96,7 @@ def data_importer(file_to_be_imported, file_name, remove_columns=True):
     col_types = ret_df.dtypes
     for index, value in col_types.items():
         if value in ['object', 'bool']:
-            if index != 'class':
+            if index != 'reservation_status':
                 ret_df[index] = le.fit_transform(ret_df[index].tolist())
     return ret_df, ret_class
 
@@ -121,9 +121,9 @@ def metrics_importer(path_name):
     return tot_df
 
 
-dataset_correlation = False
+dataset_correlation = True
 if dataset_correlation:
-    path = "/home/d18126441/PycharmProjects/rule_extractor/datasets-UCI/new_datasets/*.csv"
+    path = "/home/d18126441/PycharmProjects/rule_extractor/datasets-UCI/new_rules/hotel_bookings.csv"
 
     plot_matrix = True
     best_combination = False
@@ -150,7 +150,7 @@ if dataset_correlation:
                 best_feat = find_best_combination(df, out_class, high_corr_feat)
                 best_feat.to_csv('best_feat_' + dataset_name + '.csv')
 
-metrics_correlation = True
+metrics_correlation = False
 if metrics_correlation:
     path = '/home/d18126441/PycharmProjects/rule_extractor/metrics/*.csv'
     metrics_df = metrics_importer(path)

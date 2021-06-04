@@ -8,6 +8,8 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import StratifiedKFold
 from imblearn.over_sampling import SMOTE
 import itertools
+import pickle
+import os
 
 
 def vote_db_modifier(in_df):
@@ -100,7 +102,7 @@ def dataset_uploader(item, path, target_var='class', cross_split=5, apply_smothe
                 dataset = pd.get_dummies(dataset, columns=[index])
                 out_disc_temp.append(index)
     # The number of the discrete features must take into account the new dummy columns
-    independent_columns = [item for item in dataset.columns.tolist() if item != 'class']
+    independent_columns = [item for item in dataset.columns.tolist() if item != target_var]
     out_disc = []
     for col in out_disc_temp:
         out_disc += [i for i, v in enumerate(independent_columns) if v.find(col + '_') > -1]
@@ -194,7 +196,7 @@ def rule_metrics_calculator(in_df, y_test, model_labels, final_rules, n_classes)
     print("Robustness of the ruleset is: " + str(robustness))
     print("Number of rules : " + str(rule_n))
     print("Average rule length: " + str(avg_length))
-    overlap = sum(overlap) / (rule_n * num_test_examples)
+    overlap = sum(i for i in overlap if i > 1) / num_test_examples
     print("Fraction overlap: " + str(overlap))
     labels_considered = set(rule_labels)
     labels_considered.discard(n_classes + 10)
@@ -262,3 +264,18 @@ def attack_definer(in_df, final_rules, merge_rules=False):
                     ret.append({"source": a['rule_number'], "target": b['rule_number'], "type": "rebuttal"})
                     ret.append({"source": b['rule_number'], "target": a['rule_number'], "type": "rebuttal"})
     return ret, final_rules
+
+
+def create_empty_file(filename):
+    if not os.path.exists(filename + '.txt'):
+        open(filename + '.txt', 'w').close()
+
+
+def save_list(in_list, filename):
+    with open(filename + '.txt', 'wb') as fp:
+        pickle.dump(in_list, fp)
+
+
+def load_list(filename):
+    with open(filename + '.txt', 'rb') as fp:
+        return pickle.load(fp)

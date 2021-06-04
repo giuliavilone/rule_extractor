@@ -57,7 +57,7 @@ def model_creator(item, target_var='class', cross_split=5, remove_columns=True):
                           'shuttle': ['S7', 'S8', 'S9']
                           }
     le = LabelEncoder()
-    dataset = pd.read_csv('datasets-UCI/UCI_csv/' + item['dataset'] + '.csv')
+    dataset = pd.read_csv('datasets-UCI/new_rules/' + item['dataset'] + '.csv')
     dataset = dataset.dropna().reset_index(drop=True)
     if remove_columns and item['dataset'] in feat_to_be_deleted.keys():
         columns_to_be_deleted = [col for col in dataset.columns.tolist() if col in feat_to_be_deleted[item['dataset']]]
@@ -65,7 +65,7 @@ def model_creator(item, target_var='class', cross_split=5, remove_columns=True):
     col_types = dataset.dtypes
     for index, value in col_types.items():
         if value in ['object', 'bool']:
-            if index != 'class':
+            if index != target_var:
                 dataset = pd.get_dummies(dataset, columns=[index])
 
     # Separating independent variables from the target one
@@ -76,7 +76,7 @@ def model_creator(item, target_var='class', cross_split=5, remove_columns=True):
     ret = []
     for train_idx, test_idx, in cv.split(X, y):
         X_train, y_train = X[X.index.isin(train_idx)], y[train_idx]
-        X_train, y_train = SMOTE().fit_resample(X_train, y_train)
+        # X_train, y_train = SMOTE().fit_resample(X_train, y_train)
         X_test, y_test = X[X.index.isin(test_idx)], y[test_idx]
         model = create_model(X_train, item['classes'], item['neurons'], item['optimizer'], item['init_mode'],
                              item['activation'], item['dropout_rate']
@@ -93,12 +93,12 @@ def model_creator(item, target_var='class', cross_split=5, remove_columns=True):
     return ret
 
 
-parameters = pd.read_csv('datasets-UCI/UCI_csv/summary.csv')
-dataset_par = parameters.iloc[4]
+parameters = pd.read_csv('datasets-UCI/new_rules/summary.csv')
+dataset_par = parameters.iloc[2]
 print('--------------------------------------------------')
 print(dataset_par['dataset'])
 print('--------------------------------------------------')
 
-out_list = model_creator(dataset_par)
+out_list = model_creator(dataset_par, target_var=dataset_par['output_name'])
 out_list = pd.DataFrame(out_list, columns=['model_number', 'accuracy', 'val_accuracy'])
 out_list.to_csv('accuracy_' + dataset_par['dataset'] + '.csv')

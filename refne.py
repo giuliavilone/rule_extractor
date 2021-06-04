@@ -6,6 +6,7 @@ import random
 import copy
 import itertools
 from mysql_queries import mysql_queries_executor
+from common_functions import save_list, create_empty_file
 
 
 # Functions
@@ -134,7 +135,7 @@ def rule_evaluator(df, rule_columns, new_rule_set, out_var, model, n_samples, fi
     tot_df[out_var] = np.argmax(model.predict(tot_df), axis=1)
     tot_df = tot_df.merge(new_rule_set, on=rule_columns)
     tot_df = tot_df.drop(columns=['unique_class'])
-    tot_df['same'] = [1 if tot_df['class'].iloc[i] == tot_df['max_class'].iloc[i] else 0 for i in range(len(tot_df))]
+    tot_df['same'] = [1 if tot_df[out_var].iloc[i] == tot_df['max_class'].iloc[i] else 0 for i in range(len(tot_df))]
     group_df = tot_df.groupby(rule_columns).agg(total=('same', 'sum'),
                                                 frequency=('same', 'count')).reset_index(drop=False)
 
@@ -234,9 +235,9 @@ def column_translator(in_df, target_var, col_number_list):
     return ret
 
 
-def refne_run(X_train, X_test, y_test, discrete_attributes, continuous_attributes, label_col, dataset_par, model,
-              labels):
+def refne_run(X_train, X_test, y_test, discrete_attributes, continuous_attributes, dataset_par, model, save_graph):
 
+    label_col = dataset_par['output_name']
     discrete_attributes = column_translator(X_train, label_col, discrete_attributes)
     continuous_attributes = column_translator(X_train, label_col, continuous_attributes)
     all_column_combos = column_combos(categorical_var=discrete_attributes, continuous_var=continuous_attributes)
@@ -266,12 +267,16 @@ def refne_run(X_train, X_test, y_test, discrete_attributes, continuous_attribute
     # Calculation of metrics
     predicted_labels = np.argmax(model.predict(X_test), axis=1)
     metrics = rule_metrics_calculator(X_test, y_test, predicted_labels, final_rules, n_class)
-    attack_list, final_rules = attack_definer(X_test, final_rules, merge_rules=True)
-
-    feature_set_name = 'REFNE_' + dataset_par['dataset'] + "_featureset"
-    graph_name = 'REFNE_' + dataset_par['dataset'] + "_graph"
-    mysql_queries_executor(ruleset=final_rules, attacks=attack_list, conclusions=labels,
-                           feature_set_name=feature_set_name, graph_name=graph_name)
+    if save_graph:
+        attack_list, final_rules = attack_definer(X_test, final_rules, merge_rules=True)
+        create_empty_file('REFNE_' + dataset_par['dataset'] + "_attack_list")
+        save_list(attack_list, 'REFNE_' + dataset_par['dataset'] + "_attack_list")
+        create_empty_file('REFNE_' + dataset_par['dataset'] + "_final_rules")
+        save_list(final_rules, 'REFNE_' + dataset_par['dataset'] + "_final_rules")
+        # feature_set_name = 'REFNE_' + dataset_par['dataset'] + "_featureset"
+        # graph_name = 'REFNE_' + dataset_par['dataset'] + "_graph"
+        # mysql_queries_executor(ruleset=final_rules, attacks=attack_list, conclusions=labels,
+        #                        feature_set_name=feature_set_name, graph_name=graph_name)
 
     return metrics
 
