@@ -7,7 +7,6 @@ from common_functions import save_list, create_empty_file
 from rxren_rxncn_functions import rule_pruning, ruleset_accuracy, rule_sorter, input_delete
 from rxren_rxncn_functions import model_pruned_prediction, rule_formatter
 from scipy.stats import mode
-from mysql_queries import mysql_queries_executor
 
 # Global variables
 TOLERANCE = 0.01
@@ -173,9 +172,5 @@ def rxren_run(X_train, X_test, y_train, y_test, dataset_par, model, save_graph):
         save_list(attack_list, 'RxREN_' + dataset_par['dataset'] + "_attack_list")
         create_empty_file('RxREN_' + dataset_par['dataset'] + "_final_rules")
         save_list(final_rules, 'RxREN_' + dataset_par['dataset'] + "_final_rules")
-        # feature_set_name = 'RxREN_' + dataset_par['dataset'] + "_featureset"
-        # graph_name = 'RxREN_' + dataset_par['dataset'] + "_graph"
-        # mysql_queries_executor(ruleset=final_rules, attacks=attack_list, conclusions=labels,
-        #                       feature_set_name=feature_set_name, graph_name=graph_name)
 
     return metrics

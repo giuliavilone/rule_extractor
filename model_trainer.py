@@ -76,7 +76,7 @@ def model_creator(item, target_var='class', cross_split=5, remove_columns=True):
     ret = []
     for train_idx, test_idx, in cv.split(X, y):
         X_train, y_train = X[X.index.isin(train_idx)], y[train_idx]
-        # X_train, y_train = SMOTE().fit_resample(X_train, y_train)
+        X_train, y_train = SMOTE().fit_resample(X_train, y_train)
         X_test, y_test = X[X.index.isin(test_idx)], y[test_idx]
         model = create_model(X_train, item['classes'], item['neurons'], item['optimizer'], item['init_mode'],
                              item['activation'], item['dropout_rate']
@@ -94,7 +94,7 @@ def model_creator(item, target_var='class', cross_split=5, remove_columns=True):
 
 
 parameters = pd.read_csv('datasets-UCI/new_rules/summary.csv')
-dataset_par = parameters.iloc[2]
+dataset_par = parameters.iloc[4]
 print('--------------------------------------------------')
 print(dataset_par['dataset'])
 print('--------------------------------------------------')

@@ -11,8 +11,9 @@ from sklearn.metrics import accuracy_score
 import copy
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
-from mysql_queries import mysql_queries_executor
-from scipy.stats import mode
+from itertools import combinations
+from dataset_split import dataset_splitter
+import sys
 
 
 # These are to remove some of the tensorflow warnings. The code works in any case
@@ -26,6 +27,17 @@ pd.options.mode.chained_assignment = None
 
 
 def prediction_classifier(orig_y, predict_y, comparison="misclassified"):
+    """
+    Return the dictionary containing, for each output class, the list of the indexes of the instances that are
+    wrongly or correctly classified, depending on the comparison type.
+    :param orig_y: list/array of the original labels
+    :param predict_y: list/array of the labels predicted by a model
+    :param comparison: type of comparison. The default is misclassified, meaning that the function will return the
+    indexes of the instances that are misclassified by the model. Otherwise, the function returns the instances that
+    are correctly classified.
+    :return: dictionary containing for each output class (each class is a key) the list of the wrongly/correctly
+    classified instances
+    """
     ret = {}
     out_classes = np.unique(orig_y)
     for cls in out_classes:
@@ -75,13 +87,14 @@ def remove_column(df, column_tbm, in_weight=None):
     :param column_tbm: list of columns to be maintained in the dataframe
     :param in_weight: array of model's weights
     :param column_tbm: list of columns to be maintained in the input dataframe and the array of weights
-    :return:
+    :return: the input dataframe (df) devoided of the columns to be deleted
     """
     all_cols = df.columns.tolist()
     columns_tbd = [all_cols[i] for i, col in enumerate(all_cols) if col not in column_tbm]
-    weight_tdb = [i for i, col in enumerate(all_cols) if col not in column_tbm]
     df = df.drop(columns_tbd, axis=1)
-    in_weight[0] = np.delete(in_weight[0], weight_tdb, 0)
+    if in_weight is not None:
+        weight_tdb = [i for i, col in enumerate(all_cols) if col not in column_tbm]
+        in_weight[0] = np.delete(in_weight[0], weight_tdb, 0)
     return df, in_weight
 
 
@@ -99,7 +112,19 @@ def cluster_plots(in_df, clusters, label_col):
     plt.show()
 
 
-def rule_creator(in_df_list, label_col, *args):
+def rule_creator(in_df_list, original_x, label_col, *args):
+    """
+    Define the limits of each cluster contained in the input list of clusters (in_df_list) to determine the
+    antecedents of each rule
+    :param in_df_list: list of clusters
+    :param original_x: original dataset
+    :param label_col: name of the column containing the output labels of each cluster
+    :param args: list of the columns that are not deemed relevant and must be dropped to create the rule
+    :return: list of rules. Each rule is a dictionary where 'class' is the conclusion of the rule (the output label),
+    'columns' is the list of input variables that are relevant to reach the conclusion and 'limits' is the list of
+    the ranges (one range per each relevant variable) that determine the subset of the input space where the rule is
+    valid.
+    """
     rule_set = []
     for df in in_df_list:
         rule = {'class': df[label_col].unique()[0]}
@@ -107,14 +132,19 @@ def rule_creator(in_df_list, label_col, *args):
         df = df.drop(list(args), axis=1)
         rule['columns'] = df.columns.tolist()
         rule['limits'] = [[df[col].min(), df[col].max()] for col in df.columns.tolist()]
+        rule['samples'] = rule_elicitation(original_x, rule)
         rule_set.append(rule)
     return rule_set
 
 
-def rule_elicitation(x, in_rule, label_col):
-    original_y = x[label_col].to_numpy()
-    predicted_y = np.empty(len(x))
-    predicted_y[:] = np.nan
+def rule_elicitation(x, in_rule):
+    """
+    Calculate the accuracy score of the input rule and the indexes of the instances that fire the input rule. The
+    accuracy score is calculated over the instances that are affected by the rule.
+    :param x: dataframe containing the independent variables of the input instances
+    :param in_rule: rule to be evaluated
+    :return: the accuracy score of the rule and the indexes of the instances that fire the rule
+    """
     indexes = []
     for item in range(len(in_rule['columns'])):
         minimum = in_rule['limits'][item][0]
@@ -123,89 +153,149 @@ def rule_elicitation(x, in_rule, label_col):
         item_indexes = np.where(np.logical_and(x[column] >= minimum, x[column] <= maximum))[0]
         indexes.append(list(item_indexes))
     intersect_indexes = list(set.intersection(*[set(lst) for lst in indexes]))
-    predicted_y[intersect_indexes] = in_rule['class']
-    ret = accuracy_score(original_y[intersect_indexes], predicted_y[intersect_indexes])
-    return ret, intersect_indexes
+    return intersect_indexes
 
 
-def rule_set_evaluator(x, original_y, rule_set, label_col):
+def rule_set_evaluator(original_y, rule_set, rule_area_only=False):
+    """
+    Evaluates a set of rules by eliciting each of them and calculate the overall accuracy. The rules are first
+    sorted by the number of instances that they cover (in reverse order) so that the bigger rules do not cancel out the
+    smaller one in case of overlapping rules.
+    :param original_y:
+    :param rule_set:
+    :param rule_area_only:
+    :return:
+    """
     predicted_y = []
+    rule_indexes = []
     for rule in rule_set:
-        _, indexes = rule_elicitation(x, rule, label_col)
+        indexes = rule['samples']
+        rule_indexes += indexes
         predicted_y.append((len(indexes), indexes, rule['class']))
     predicted_y = sorted(predicted_y, reverse=True, key=lambda tup: tup[0])
-    ret = np.empty(len(x))
+    ret_labels = np.empty(len(original_y))
+    ret_labels[:] = np.nan
     for t in predicted_y:
-        ret[t[1]] = t[2]
-    empty_index = list(np.where(np.isnan(ret))[0])
-    if len(empty_index) > 0:
-        ret[empty_index] = mode(original_y)[0][0]
-        # ret[np.where(np.isnan(ret))] = len(np.unique(y)) + 10
-    accuracy = accuracy_score(ret.round(), original_y)
-    return accuracy, ret, empty_index
+        ret_labels[t[1]] = t[2]
+    empty_index = list(np.where(np.isnan(ret_labels))[0])
+    if rule_area_only:
+        rule_indexes = list(set(rule_indexes))
+        predicted_labels = ret_labels[rule_indexes]
+        predicted_labels[np.where(np.isnan(predicted_labels))] = len(np.unique(original_y)) + 10
+        accuracy = accuracy_score(predicted_labels.round(), original_y[rule_indexes])
+    else:
+        if len(empty_index) > 0:
+            ret_labels[np.where(np.isnan(ret_labels))] = len(np.unique(original_y)) + 10
+        accuracy = accuracy_score(ret_labels.round(), original_y)
+    return accuracy, ret_labels, empty_index
 
 
-def rule_extractor(in_df, label_col, minimum_acc, number_clusters=2, linkage='complete', min_sample=20):
-    rule_set = []
+def rule_extractor(original_data, original_label, in_df, label_col, minimum_acc, rule_set, number_clusters=2,
+                   linkage='complete', min_sample=300):
+    """
+    Return the ruleset automatically extracted to mimic the logic of a machine-learned model.
+    :param original_data:
+    :param original_label:
+    :param in_df:
+    :param label_col:
+    :param minimum_acc:
+    :param rule_set:
+    :param number_clusters:
+    :param linkage:
+    :param min_sample:
+    :return: a list of dictionaries where each dictionary is a rule
+    """
     groups = in_df.groupby(label_col, as_index=False)
     for key, group in groups:
         if len(group) > min_sample:
             clustering = AgglomerativeClustering(n_clusters=number_clusters, linkage=linkage).fit(group.to_numpy())
             group['clusters'] = clustering.labels_
             ans = [pd.DataFrame(x) for _, x in group.groupby('clusters', as_index=False)]
-            new_rules = rule_creator(ans, label_col, 'clusters')
-            for rule in new_rules:
-                rule_acc, indexes = rule_elicitation(in_df, rule, label_col)
-                if rule_acc < minimum_acc:
-                    new_x = in_df[in_df.index.isin(indexes)]
-                    rule_set += rule_extractor(new_x, label_col, minimum_acc, number_clusters=number_clusters)
-                else:
-                    rule_set.append(rule)
+            new_rules = rule_creator(ans, original_data, label_col, 'clusters')
+            new_ruleset_accuracy, _, _ = rule_set_evaluator(original_label, new_rules, rule_area_only=True)
+            print("New ruleset accuracy: ", new_ruleset_accuracy)
+            if new_ruleset_accuracy > minimum_acc:
+                best_acc = new_ruleset_accuracy
+                best_rule = []
+                for r in range(1, number_clusters+1):
+                    combos = combinations(new_rules, r)
+                    for combo in combos:
+                        combo = list(combo)
+                        combo_accuracy, _, _ = rule_set_evaluator(original_label, combo, rule_area_only=True)
+                        if combo_accuracy >= best_acc:
+                            best_rule = combo
+                rule_set = rule_set + best_rule
+            else:
+                for rule in new_rules:
+                    rule_acc, _, _ = rule_set_evaluator(original_label, [rule], rule_area_only=True)
+                    if rule_acc < minimum_acc:
+                        rule_indexes = rule_elicitation(in_df, rule)
+                        new_x = in_df[in_df.index.isin(rule_indexes)]
+                        rule_set = rule_extractor(original_data, original_label, new_x, label_col, minimum_acc,
+                                                  rule_set, number_clusters=number_clusters)
+                    else:
+                        rule_set.append(rule)
         else:
             group = group.drop(label_col, axis=1)
             rule = {'class': key, 'columns': group.columns.tolist(),
                     'limits': [[group[col].min(), group[col].max()] for col in group.columns.tolist()]
                     }
+            rule['samples'] = rule_elicitation(original_data, rule)
             rule_set.append(rule)
     return rule_set
 
 
+def find_min_position(array):
+    """
+    Return the position of the minimum positive number (>0) of each row of the input array
+    :param array:
+    :return: list of the position of the minimum value of each row of input array
+    """
+    min_list = []
+    for row in array:
+        min_elem = min(row[row > 0])
+        min_list.append(list(np.where(row == min_elem)[0])[0])
+    return min_list
+
+
 def complete_rule(in_df, original_y, rule_list, label_col):
-    temp_rule_set = copy.deepcopy(rule_list)
-    _, _, empty_index = rule_set_evaluator(in_df, original_y, rule_list, label_col)
+    new_df = copy.deepcopy(in_df)
+    new_df[label_col] = original_y
+    _, _, empty_index = rule_set_evaluator(original_y, rule_list)
     if len(empty_index) > 0:
-        uncovered_instances = in_df.iloc[empty_index]
-        for _, row in uncovered_instances.iterrows():
-            min_dist = []
-            for rule_number in range(len(temp_rule_set)):
-                rule = temp_rule_set[rule_number]
-                if row[label_col] == rule['class']:
-                    tot_dist = 0
-                    temp_rule = copy.deepcopy(rule)
-                    for column_number in range(len(rule['columns'])):
-                        element = row[rule['columns'][column_number]]
-                        range_min = rule['limits'][column_number][0]
-                        range_max = rule['limits'][column_number][1]
-                        if element < range_min or element > range_max:
-                            tot_dist += min(abs(element - range_min), abs(element - range_max))
-                            if element < range_min:
-                                temp_rule['limits'][column_number][0] = element
-                            elif element > range_max:
-                                temp_rule['limits'][column_number][1] = element
-                    min_dist.append((tot_dist, rule_number, temp_rule))
-            min_dist.sort(key=lambda x: x[0])
-            rule_to_be_updated = min_dist[0]
-            rule_list[rule_to_be_updated[1]] = rule_to_be_updated[2]
+        uncovered_instances = new_df.iloc[empty_index]
+        min_dist = np.zeros((len(uncovered_instances), len(rule_list)))
+        for rule_number in range(len(rule_list)):
+            rule = rule_list[rule_number]
+            class_indexes = np.where(uncovered_instances[label_col] == rule['class'])[0]
+            for column_number in range(len(rule['columns'])):
+                element = uncovered_instances[rule['columns'][column_number]]
+                range_min = rule['limits'][column_number][0]
+                range_max = rule['limits'][column_number][1]
+                min_dist[:, rule_number] += [max(range_min - v, 0) + max(v - range_max, 0)
+                                             if i in class_indexes else 0 for i, v in enumerate(element)]
+        min_dist_per_instance = find_min_position(min_dist)
+        min_rules = set(min_dist_per_instance)
+        for m_rule in min_rules:
+            indices = [i for i, x in enumerate(min_dist_per_instance) if x == m_rule]
+            rule_instances = uncovered_instances.iloc[indices]
+            rule = rule_list[rule_number]
+            temp_rule = copy.deepcopy(rule)
+            for cn in range(len(rule['columns'])):
+                temp_rule['limits'][cn][0] = min(min(rule_instances[rule['columns'][cn]]), rule['limits'][cn][0])
+                temp_rule['limits'][cn][1] = max(max(rule_instances[rule['columns'][cn]]), rule['limits'][cn][1])
+            temp_rule['samples'] += list(rule_instances.index.values)
+            rule_list[m_rule] = temp_rule
     return rule_list
 
 
-def rule_pruning(rule_set, original_accuracy, x, original_y, label_col):
+def rule_pruning(rule_set, original_accuracy, original_y):
     new_rules = copy.deepcopy(rule_set)
     ret = []
     item = 0
     while item < len(new_rules):
         rule = new_rules.pop(item)
-        new_accuracy, _, _ = rule_set_evaluator(x, original_y, new_rules, label_col)
+        new_accuracy, _, _ = rule_set_evaluator(original_y, new_rules)
         if new_accuracy < original_accuracy:
             ret.append(rule)
             new_rules = [rule] + new_rules
@@ -213,10 +303,51 @@ def rule_pruning(rule_set, original_accuracy, x, original_y, label_col):
     return ret
 
 
+def number_split_finder(y, max_row):
+    """
+    Determine the number of subsets (or splits) depending on the number of instances per each input class and the total
+    number of instances. The number of subsets must be a divider of all these numbers and the resulting subsets must
+    not contain more instances than a maximum number defined by the user.
+    :param y: list/array of output labels
+    :param max_row: maximum number of instance per subset
+    :return: the number of subsets (or splits)
+    """
+    data_length = list(np.bincount(y))
+    find_split = True
+    split = 2
+    while find_split:
+        division = [np.mod(i, split) for i in data_length]
+        if sum(division) == 0 and np.round(len(y) / split) < max_row:
+            return split
+        else:
+            split += 1
+
+
+def ruleset_definer(original_x, original_y, dataset_par, weights, out_column, minimum_acc, max_row, min_row,
+                    split_x=None):
+    if split_x is None:
+        xSynth = synthetic_data_generator(original_x, min(original_x.shape[0] * 2, max_row-original_x.shape[0]))
+        X = xSynth.append(original_x, ignore_index=True)
+    else:
+        # xSynth = synthetic_data_generator(split_x, min(split_x.shape[0] * 2, max_row - split_x.shape[0]))
+        X = split_x
+
+    y = model_pruned_prediction([], X, dataset_par, in_weight=weights)
+    X[out_column] = y
+
+    rules = rule_extractor(original_x, original_y, X, out_column, minimum_acc, [], number_clusters=4,
+                           min_sample=min_row)
+    rule_accuracy, _, _ = rule_set_evaluator(original_y, rules)
+    final_rules = rule_pruning(rules, rule_accuracy, original_y)
+    return final_rules
+
+
 def new_rule_extractor(X_train, X_test, y_train, y_test, dataset_par, save_graph):
     MINIMUM_ACC = 0.7
+    MAX_ROW = 30000
     LABEL_COL = dataset_par['output_name']
     n_class = dataset_par['classes']
+    MIN_ROW = dataset_par['minimum_row']
     X_train = pd.concat([X_train, X_test], ignore_index=True)
     model = load_model('trained_models/trained_model_' + dataset_par['dataset'] + '_'
                        + str(dataset_par['best_model']) + '.h5'
@@ -227,24 +358,30 @@ def new_rule_extractor(X_train, X_test, y_train, y_test, dataset_par, save_graph
     significant_features = network_pruning(weights, X_train, results, in_item=dataset_par)
 
     X_train, weights = remove_column(X_train, significant_features, in_weight=weights)
+    X_test, _ = remove_column(X_test, significant_features)
+    results = model_pruned_prediction([], X_train, dataset_par, in_weight=weights)
+    print("Model pruned")
 
-    xSynth = synthetic_data_generator(X_train, X_train.shape[0])
+    if len(X_train) > MAX_ROW:
+        overall_rules = []
+        n_splits = number_split_finder(results, MAX_ROW)
+        print("Splitting the dataset")
+        splits, split_labels = dataset_splitter(X_train, results, n_splits, n_class, distance_name='euclidean')
+        for split in splits:
+            print("----------------- Working on a split ---------------------")
+            split_X = pd.DataFrame(split, columns=X_train.columns.tolist())
+            split_rules = ruleset_definer(X_train, results, dataset_par, weights, LABEL_COL, MINIMUM_ACC, MAX_ROW,
+                                          MIN_ROW, split_x=split_X)
+            overall_rules += split_rules
+        rule_accuracy, _, _ = rule_set_evaluator(results, overall_rules)
+        overall_rules = rule_pruning(overall_rules, rule_accuracy, results)
+    else:
+        overall_rules = ruleset_definer(X_train, results, dataset_par, weights, LABEL_COL, MINIMUM_ACC, MAX_ROW,
+                                        MIN_ROW)
 
-    X = xSynth.append(X_train, ignore_index=True)
-    y = model_pruned_prediction([], X, dataset_par, in_weight=weights)
-    X[LABEL_COL] = y
-    rules = rule_extractor(X, LABEL_COL, MINIMUM_ACC, number_clusters=3)
-    rules = complete_rule(X, y, rules, LABEL_COL)
-
-    # print('------------------------------- Final rules -------------------------------')
-    # print(len(rules))
-    rule_accuracy, _, _ = rule_set_evaluator(X, y, rules, LABEL_COL)
-    print('Original accuracy: ', rule_accuracy)
-    final_rules = rule_pruning(rules, rule_accuracy, X, y, LABEL_COL)
-    # print('------------------------------- Final rules -------------------------------')
-    # print(len(final_rules))
-    rule_accuracy, rule_prediction, _ = rule_set_evaluator(X, y, final_rules, LABEL_COL)
-    print('New original accuracy: ', rule_accuracy)
+    final_rules = complete_rule(X_train, results, overall_rules, LABEL_COL)
+    rule_accuracy, rule_prediction, _ = rule_set_evaluator(results, final_rules)
+    # print(final_rules)
     # cluster_plots(X, y, LABEL_COL)
     # cluster_plots(X, rule_prediction.round().astype(int), LABEL_COL)
 
@@ -255,9 +392,5 @@ def new_rule_extractor(X_train, X_test, y_train, y_test, dataset_par, save_graph
         save_list(attack_list, 'NEW_METHOD_' + dataset_par['dataset'] + "_attack_list")
         create_empty_file('NEW_METHOD_' + dataset_par['dataset'] + "_final_rules")
         save_list(final_rules, 'NEW_METHOD_' + dataset_par['dataset'] + "_final_rules")
-        # feature_set_name = 'New_method_' + dataset_par['dataset'] + "_featureset"
-        # graph_name = 'New_method_' + dataset_par['dataset'] + "_graph"
-        # mysql_queries_executor(ruleset=final_rules, attacks=attack_list, conclusions=labels,
-        #                       feature_set_name=feature_set_name, graph_name=graph_name)
 
     return metrics

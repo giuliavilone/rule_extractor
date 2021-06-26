@@ -10,6 +10,8 @@ from imblearn.over_sampling import SMOTE
 import itertools
 import pickle
 import os
+from sklearn.metrics import accuracy_score
+import sys
 
 
 def vote_db_modifier(in_df):
@@ -128,25 +130,63 @@ def dataset_uploader(item, path, target_var='class', cross_split=5, apply_smothe
     return x_train_list, x_test_list, y_train_list, y_test_list, labels, out_disc, out_cont
 
 
-def rule_elicitation(in_df, iny, rules):
+def rule_elicitation(x, in_rule):
     """
-    Apply the input rules to the list of labels iny according to the rule conditions on in_df
+    Calculate the accuracy score of the input rule and the indexes of the instances that fire the input rule. The
+    accuracy score is calculated over the instances that are affected by the rule.
+    :param x: dataframe containing the independent variables of the input instances
+    :param in_rule: rule to be evaluated
+    :return: the accuracy score of the rule and the indexes of the instances that fire the rule
+    """
+    indexes = []
+    for item in range(len(in_rule['columns'])):
+        minimum = in_rule['limits'][item][0]
+        maximum = in_rule['limits'][item][1]
+        column = in_rule['columns'][item]
+        item_indexes = np.where(np.logical_and(x[column] >= minimum, x[column] <= maximum))[0]
+        indexes.append(list(item_indexes))
+    intersect_indexes = list(set.intersection(*[set(lst) for lst in indexes]))
+    return intersect_indexes
+
+
+def rule_set_evaluator(x, rule_set):
+    """
+    Evaluates a set of rules by eliciting each of them and calculate the overall accuracy. The rules are first
+    sorted by the number of instances that they cover (in reverse order) so that the bigger rules do not cancel out the
+    smaller one in case of overlapping rules.
+    :param x:
+    :param rule_set:
+    :return:
+    """
+    predicted_y = []
+    rule_indexes = []
+    for rule in rule_set:
+        indexes = rule_elicitation(x, rule)
+        rule_indexes.append(indexes)
+        predicted_y.append((len(indexes), indexes, rule['class']))
+    predicted_y = sorted(predicted_y, reverse=True, key=lambda tup: tup[0])
+    ret_labels = np.empty(len(x))
+    ret_labels[:] = np.nan
+    for t in predicted_y:
+        ret_labels[t[1]] = t[2]
+    return ret_labels
+
+
+def overlap_calculator(in_df, rules):
+    """
+    Calculate the overlap area
     :param in_df:
-    :param iny:
     :param rules:
     :return: iny
     """
-    indexes = []
-    over_y = np.zeros(len(iny))
-    for r in range(len(rules['columns'])):
-        x = in_df[rules['columns'][r]]
-        if len(rules['limits']) > 0:
-            ix = list(np.where((x >= rules['limits'][r][0]) & (x <= rules['limits'][r][1]))[0])
-            indexes.append(list(ix))
-            over_y[ix] = 1
-    intersect_indexes = list(set.intersection(*[set(lst) for lst in indexes]))
-    iny[intersect_indexes] = rules['class']
-    return iny, over_y
+    overlap = np.zeros(in_df.shape[0])
+    for rule in rules:
+        rule_overlap = np.zeros(in_df.shape[0])
+        indexes = rule_elicitation(in_df, rule)
+        rule_overlap[indexes] = 1
+        overlap += rule_overlap
+    overlap = len([1 for i in overlap if i > 1]) / in_df.shape[0]
+    return overlap
 
 
 def rule_metrics_calculator(in_df, y_test, model_labels, final_rules, n_classes):
@@ -156,47 +196,29 @@ def rule_metrics_calculator(in_df, y_test, model_labels, final_rules, n_classes)
     :return: list of metrics
     """
     rule_n = len(final_rules)
-    num_test_examples = in_df.shape[0]
     perturbed_data = perturbator(in_df)
-    rule_labels = np.empty(num_test_examples)
-    rule_labels[:] = np.nan
-    perturbed_labels = np.empty(num_test_examples)
-    perturbed_labels[:] = np.nan
-    overlap = np.zeros(num_test_examples)
-
-    for rule in final_rules:
-        columns = in_df[rule['columns']]
-        rule_labels, rule_overlap = rule_elicitation(columns, rule_labels, rule)
-        overlap += rule_overlap
-        p_neuron = perturbed_data[rule['columns']]
-        perturbed_labels, _ = rule_elicitation(p_neuron, rule_labels, rule)
+    rule_labels = rule_set_evaluator(in_df, final_rules)
+    perturbed_labels = rule_set_evaluator(perturbed_data, final_rules)
+    overlap = overlap_calculator(in_df, final_rules)
 
     y_test = y_test.tolist()
     if len(final_rules) > 0:
         avg_length = sum([len(item['columns']) for item in final_rules]) / rule_n
     else:
         avg_length = 0
-    complete = sum(~np.isnan(rule_labels)) / num_test_examples
+    complete = sum(~np.isnan(rule_labels)) / in_df.shape[0]
     rule_labels[np.where(np.isnan(rule_labels))] = n_classes + 10
     perturbed_labels[np.where(np.isnan(perturbed_labels))] = n_classes + 10
-    correct = 0
-    fidel = 0
-    rob = 0
-    for i in range(0, num_test_examples):
-        fidel += (rule_labels[i] == model_labels[i])
-        correct += (rule_labels[i] == y_test[i])
-        rob += (rule_labels[i] == perturbed_labels[i])
 
     print("Completeness of the ruleset is: " + str(complete))
-    correctness = correct / num_test_examples
+    correctness = accuracy_score(y_test, rule_labels)
     print("Correctness of the ruleset is: " + str(correctness))
-    fidelity = fidel / num_test_examples
+    fidelity = accuracy_score(model_labels, rule_labels)
     print("Fidelity of the ruleset is: " + str(fidelity))
-    robustness = rob / num_test_examples
+    robustness = accuracy_score(rule_labels, perturbed_labels)
     print("Robustness of the ruleset is: " + str(robustness))
     print("Number of rules : " + str(rule_n))
     print("Average rule length: " + str(avg_length))
-    overlap = sum(i for i in overlap if i > 1) / num_test_examples
     print("Fraction overlap: " + str(overlap))
     labels_considered = set(rule_labels)
     labels_considered.discard(n_classes + 10)
@@ -235,12 +257,10 @@ def rule_merger(ruleset, cover_list):
 
 def attack_definer(in_df, final_rules, merge_rules=False):
     ret = []
-    rule_labels = np.zeros(in_df.shape[0])
     total_cover = []
     for rule_number in range(len(final_rules)):
         rule = final_rules[rule_number]
-        columns = in_df[rule['columns']]
-        _, rule_cover = rule_elicitation(columns, rule_labels, rule)
+        rule_cover = rule_elicitation(in_df, rule)
         rule_cover = {'rule_number': "R"+str(rule_number), 'rule_cover': rule_cover, 'rule_class': rule['class']}
         total_cover.append(rule_cover)
         rule['rule_number'] = "R"+str(rule_number)
@@ -276,6 +296,6 @@ def save_list(in_list, filename):
         pickle.dump(in_list, fp)
 
 
-def load_list(filename):
-    with open(filename + '.txt', 'rb') as fp:
+def load_list(filename, path):
+    with open(path + filename + '.txt', 'rb') as fp:
         return pickle.load(fp)

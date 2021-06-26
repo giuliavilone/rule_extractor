@@ -7,14 +7,13 @@ from rxncn import rxncn_run
 from rxren import rxren_run
 from trepan_run import run_trepan
 from new_method import new_rule_extractor
-import sys
 
 
 parameters = pd.read_csv('datasets-UCI/new_rules/summary.csv')
 data_path = 'datasets-UCI/new_rules/'
 save_graph = True
 
-for df in range(len(parameters)):
+for df in [0]:
     metric_list = []
     dataset_par = parameters.iloc[df]
     label_col = dataset_par['output_name']
@@ -36,24 +35,24 @@ for df in range(len(parameters)):
                        + str(dataset_par['best_model']) + '.h5')
 
     print('---------------------- Working on REFNE -----------------------')
-    metric_refne = refne_run(X_train, X_test, y_test, disc_attributes, cont_attributes, dataset_par, model, save_graph)
-    metric_list.append(['REFNE'] + metric_refne)
+    # metric_refne = refne_run(X_train, X_test, y_test, disc_attributes, cont_attributes, dataset_par, model, save_graph)
+    # metric_list.append(['REFNE'] + metric_refne)
 
     print('---------------------- Working on C45 PANE -----------------------')
     # metric_c45 = run_c45_pane(X_train, X_test, y_test, dataset_par, model, labels)
     # metric_list.append(['C45 PANE'] + metric_c45)
 
     print('---------------------- Working on RxNCM -----------------------')
-    metric_rxncn = rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model, save_graph)
-    metric_list.append(['RXNCM'] + metric_rxncn)
+    # metric_rxncn = rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model, save_graph)
+    # metric_list.append(['RXNCM'] + metric_rxncn)
 
     print('---------------------- Working on RxREN -----------------------')
-    metric_rxren = rxren_run(X_train, X_test, y_train, y_test, dataset_par, model, save_graph)
-    metric_list.append(['RXREN'] + metric_rxren)
+    # metric_rxren = rxren_run(X_train, X_test, y_train, y_test, dataset_par, model, save_graph)
+    # metric_list.append(['RXREN'] + metric_rxren)
 
     print('---------------------- Working on TREPAN -----------------------')
-    metric_trepan = run_trepan(X_train, X_test, y_train, y_test, disc_attributes, dataset_par, model)
-    metric_list.append(['TREPAN'] + metric_trepan)
+    # metric_trepan = run_trepan(X_train, X_test, y_train, y_test, disc_attributes, dataset_par, model)
+    # metric_list.append(['TREPAN'] + metric_trepan)
 
     print('---------------------- Working on NEW METHOD -----------------------')
     new_metrics = new_rule_extractor(X_train, X_test, y_train, y_test, dataset_par, save_graph)

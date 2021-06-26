@@ -5,7 +5,6 @@ from common_functions import rule_metrics_calculator, attack_definer
 import random
 import copy
 import itertools
-from mysql_queries import mysql_queries_executor
 from common_functions import save_list, create_empty_file
 
 
@@ -241,7 +240,7 @@ def refne_run(X_train, X_test, y_test, discrete_attributes, continuous_attribute
     discrete_attributes = column_translator(X_train, label_col, discrete_attributes)
     continuous_attributes = column_translator(X_train, label_col, continuous_attributes)
     all_column_combos = column_combos(categorical_var=discrete_attributes, continuous_var=continuous_attributes)
-    synth_samples = X_train.shape[0] * 2
+    synth_samples = X_train.shape[0]
     xSynth = synthetic_data_generator(X_train, synth_samples)
     xSynth = xSynth.append(X_train, ignore_index=True)
     ySynth = np.argmax(model.predict(xSynth), axis=1)
@@ -273,10 +272,6 @@ def refne_run(X_train, X_test, y_test, discrete_attributes, continuous_attribute
         save_list(attack_list, 'REFNE_' + dataset_par['dataset'] + "_attack_list")
         create_empty_file('REFNE_' + dataset_par['dataset'] + "_final_rules")
         save_list(final_rules, 'REFNE_' + dataset_par['dataset'] + "_final_rules")
-        # feature_set_name = 'REFNE_' + dataset_par['dataset'] + "_featureset"
-        # graph_name = 'REFNE_' + dataset_par['dataset'] + "_graph"
-        # mysql_queries_executor(ruleset=final_rules, attacks=attack_list, conclusions=labels,
-        #                        feature_set_name=feature_set_name, graph_name=graph_name)
 
     return metrics
 

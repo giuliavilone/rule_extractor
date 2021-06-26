@@ -8,7 +8,6 @@ import dictlib
 from sklearn.model_selection import train_test_split
 from rxren_rxncn_functions import rule_pruning, ruleset_accuracy, input_delete
 from rxren_rxncn_functions import model_pruned_prediction, prediction_reshape, rule_formatter, rule_sorter
-from mysql_queries import mysql_queries_executor
 
 
 # Functions
@@ -146,6 +145,7 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model, save_graph):
     alpha = 0.1
     n_class = dataset_par['classes']
     X_test, X_val, y_test, y_val = train_test_split(X_test, y_test, test_size=0.33)
+    print(X_train.columns)
 
     column_lst = X_train.columns.tolist()
     column_dict = {i: column_lst[i] for i in range(len(column_lst))}
@@ -186,7 +186,6 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model, save_graph):
         y_tot = np.concatenate([y_train, y_test, y_val], axis=0)
 
         rule_limits, rule_accuracy = rule_pruning(X_val, y_val, rule_limits, n_class)
-
         final_rules = rule_sorter(rule_limits, X_test, sig_cols)
 
         y_val_predicted = model_pruned_prediction([], X_val, dataset_par, in_weight=pruned_w)
@@ -208,10 +207,6 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model, save_graph):
             save_list(attack_list, 'RxNCM_' + dataset_par['dataset'] + "_attack_list")
             create_empty_file('RxNCM_' + dataset_par['dataset'] + "_final_rules")
             save_list(final_rules, 'RxNCM_' + dataset_par['dataset'] + "_final_rules")
-            # feature_set_name = 'RxNCM_' + dataset_par['dataset'] + "_featureset"
-            # graph_name = 'RxNCM_' + dataset_par['dataset'] + "_graph"
-            # mysql_queries_executor(ruleset=final_rules, attacks=attack_list, conclusions=labels,
-            #                       feature_set_name=feature_set_name, graph_name=graph_name)
 
         return metrics
     else:
