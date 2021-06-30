@@ -26,6 +26,11 @@ import sys
 pd.options.mode.chained_assignment = None
 
 
+def nan_raplacer(in_array, n_classes):
+    in_array[np.where(np.isnan(in_array))] = n_classes + 10
+    return in_array
+
+
 def prediction_classifier(orig_y, predict_y, comparison="misclassified"):
     """
     Return the dictionary containing, for each output class, the list of the indexes of the instances that are
@@ -112,6 +117,23 @@ def cluster_plots(in_df, clusters, label_col):
     plt.show()
 
 
+def rule_assembler(df, original_x, conclusion):
+    """
+    Given the input dataframe with the data to be used to create the rule and the rule's conclusion,
+    the function generates the rule's dictionary and assigns the indexes of the samples (in the original dataset)
+    that are covered by the new rule.
+    :param df: pandas dataframe containing the data that will be covered by the new rule
+    :param original_x: pandas dataframe containing the entire dataset (either training, valuation or both)
+    :param conclusion: the name of the output class that must be assigned to the rule's connlcusion
+    :return:
+    """
+    rule = {'class': conclusion,
+            'columns': df.columns.tolist(),
+            'limits': [[df[col].min(), df[col].max()] for col in df.columns.tolist()]}
+    rule['samples'] = rule_elicitation(original_x, rule)
+    return rule
+
+
 def rule_creator(in_df_list, original_x, label_col, *args):
     """
     Define the limits of each cluster contained in the input list of clusters (in_df_list) to determine the
@@ -127,12 +149,10 @@ def rule_creator(in_df_list, original_x, label_col, *args):
     """
     rule_set = []
     for df in in_df_list:
-        rule = {'class': df[label_col].unique()[0]}
         df = df.drop(label_col, axis=1)
-        df = df.drop(list(args), axis=1)
-        rule['columns'] = df.columns.tolist()
-        rule['limits'] = [[df[col].min(), df[col].max()] for col in df.columns.tolist()]
-        rule['samples'] = rule_elicitation(original_x, rule)
+        if args:
+            df = df.drop(list(args), axis=1)
+        rule = rule_assembler(df, original_x, df[label_col].unique()[0])
         rule_set.append(rule)
     return rule_set
 
@@ -181,11 +201,11 @@ def rule_set_evaluator(original_y, rule_set, rule_area_only=False):
     if rule_area_only:
         rule_indexes = list(set(rule_indexes))
         predicted_labels = ret_labels[rule_indexes]
-        predicted_labels[np.where(np.isnan(predicted_labels))] = len(np.unique(original_y)) + 10
+        predicted_labels = nan_raplacer(predicted_labels, len(np.unique(original_y)))
         accuracy = accuracy_score(predicted_labels.round(), original_y[rule_indexes])
     else:
         if len(empty_index) > 0:
-            ret_labels[np.where(np.isnan(ret_labels))] = len(np.unique(original_y)) + 10
+            ret_labels = nan_raplacer(ret_labels, len(np.unique(original_y)))
         accuracy = accuracy_score(ret_labels.round(), original_y)
     return accuracy, ret_labels, empty_index
 
@@ -237,10 +257,7 @@ def rule_extractor(original_data, original_label, in_df, label_col, minimum_acc,
                         rule_set.append(rule)
         else:
             group = group.drop(label_col, axis=1)
-            rule = {'class': key, 'columns': group.columns.tolist(),
-                    'limits': [[group[col].min(), group[col].max()] for col in group.columns.tolist()]
-                    }
-            rule['samples'] = rule_elicitation(original_data, rule)
+            rule = rule_assembler(group, original_data, key)
             rule_set.append(rule)
     return rule_set
 
@@ -258,28 +275,44 @@ def find_min_position(array):
     return min_list
 
 
+def minimum_distance(df, ruleset, label_col):
+    """
+    Given an input dataframe and a list of rules, this function calculate the minimum distance between each instance
+    of the dataset and the rule limits for each column of the input dataset. For examples, let's assume that the rule
+    on variable A has a range of [5,10] and the dataframe contains 3 instances that have the following values for
+    variable A: 1, 7, 12. Their distances to the rule will be 4 (5-1), 0 (the second instance falls within the rule's
+    range) and 2 (12-10).
+    :param df: pandas dataframe
+    :param ruleset: list of rules
+    :param label_col: name of the output column
+    :return: numpy array with the distance
+    """
+    ret = np.zeros((len(df), len(ruleset)))
+    for rule_number in range(len(ruleset)):
+        rule = ruleset[rule_number]
+        indexes = np.where(df[label_col] == rule['class'])[0]
+        for column_number in range(len(rule['columns'])):
+            element = df[rule['columns'][column_number]]
+            col_min = rule['limits'][column_number][0]
+            col_max = rule['limits'][column_number][1]
+            ret[:, rule_number] += [max(col_min - v, 0) + max(v - col_max, 0) if i in indexes
+                                    else 0 for i, v in enumerate(element)]
+    return ret
+
+
 def complete_rule(in_df, original_y, rule_list, label_col):
     new_df = copy.deepcopy(in_df)
     new_df[label_col] = original_y
     _, _, empty_index = rule_set_evaluator(original_y, rule_list)
     if len(empty_index) > 0:
         uncovered_instances = new_df.iloc[empty_index]
-        min_dist = np.zeros((len(uncovered_instances), len(rule_list)))
-        for rule_number in range(len(rule_list)):
-            rule = rule_list[rule_number]
-            class_indexes = np.where(uncovered_instances[label_col] == rule['class'])[0]
-            for column_number in range(len(rule['columns'])):
-                element = uncovered_instances[rule['columns'][column_number]]
-                range_min = rule['limits'][column_number][0]
-                range_max = rule['limits'][column_number][1]
-                min_dist[:, rule_number] += [max(range_min - v, 0) + max(v - range_max, 0)
-                                             if i in class_indexes else 0 for i, v in enumerate(element)]
+        min_dist = minimum_distance(uncovered_instances, rule_list, label_col)
         min_dist_per_instance = find_min_position(min_dist)
         min_rules = set(min_dist_per_instance)
         for m_rule in min_rules:
             indices = [i for i, x in enumerate(min_dist_per_instance) if x == m_rule]
             rule_instances = uncovered_instances.iloc[indices]
-            rule = rule_list[rule_number]
+            rule = rule_list[m_rule]
             temp_rule = copy.deepcopy(rule)
             for cn in range(len(rule['columns'])):
                 temp_rule['limits'][cn][0] = min(min(rule_instances[rule['columns'][cn]]), rule['limits'][cn][0])
