@@ -6,14 +6,14 @@ from c45_test import run_c45_pane
 from rxncn import rxncn_run
 from rxren import rxren_run
 from trepan_run import run_trepan
-from new_method import new_rule_extractor
+from new_method import cluster_rule_extractor
 
 
 parameters = pd.read_csv('datasets-UCI/new_rules/summary.csv')
 data_path = 'datasets-UCI/new_rules/'
 save_graph = True
 
-for df in [0]:
+for df in [2]:
     metric_list = []
     dataset_par = parameters.iloc[df]
     label_col = dataset_par['output_name']
@@ -55,7 +55,7 @@ for df in [0]:
     # metric_list.append(['TREPAN'] + metric_trepan)
 
     print('---------------------- Working on NEW METHOD -----------------------')
-    new_metrics = new_rule_extractor(X_train, X_test, y_train, y_test, dataset_par, save_graph)
+    new_metrics = cluster_rule_extractor(X_train, X_test, y_train, y_test, dataset_par, save_graph)
     metric_list.append(['NEW METHOD'] + new_metrics)
 
     pd.DataFrame(metric_list, columns=['method', 'complete', 'correctness', 'fidelity', 'robustness', 'rule_n',

@@ -26,7 +26,7 @@ import sys
 pd.options.mode.chained_assignment = None
 
 
-def nan_raplacer(in_array, n_classes):
+def nan_replacer(in_array, n_classes):
     in_array[np.where(np.isnan(in_array))] = n_classes + 10
     return in_array
 
@@ -149,10 +149,11 @@ def rule_creator(in_df_list, original_x, label_col, *args):
     """
     rule_set = []
     for df in in_df_list:
+        conclusion = df[label_col].unique()[0]
         df = df.drop(label_col, axis=1)
         if args:
             df = df.drop(list(args), axis=1)
-        rule = rule_assembler(df, original_x, df[label_col].unique()[0])
+        rule = rule_assembler(df, original_x, conclusion)
         rule_set.append(rule)
     return rule_set
 
@@ -201,11 +202,11 @@ def rule_set_evaluator(original_y, rule_set, rule_area_only=False):
     if rule_area_only:
         rule_indexes = list(set(rule_indexes))
         predicted_labels = ret_labels[rule_indexes]
-        predicted_labels = nan_raplacer(predicted_labels, len(np.unique(original_y)))
+        predicted_labels = nan_replacer(predicted_labels, len(np.unique(original_y)))
         accuracy = accuracy_score(predicted_labels.round(), original_y[rule_indexes])
     else:
         if len(empty_index) > 0:
-            ret_labels = nan_raplacer(ret_labels, len(np.unique(original_y)))
+            ret_labels = nan_replacer(ret_labels, len(np.unique(original_y)))
         accuracy = accuracy_score(ret_labels.round(), original_y)
     return accuracy, ret_labels, empty_index
 
@@ -375,7 +376,35 @@ def ruleset_definer(original_x, original_y, dataset_par, weights, out_column, mi
     return final_rules
 
 
-def new_rule_extractor(X_train, X_test, y_train, y_test, dataset_par, save_graph):
+def item_remover(in_list, remove_index_list):
+    """
+    Remove the elements in the remove_index_list from the in_list and return the shortened list
+    :param in_list:
+    :param remove_index_list:
+    :return:
+    """
+    return [val for ind, val in enumerate(in_list) if ind not in remove_index_list]
+
+
+def antecedent_pruning(ruleset, original_x):
+    """
+    Remove the antecedents whose limits cover the entire range of the original dataset.
+    :param ruleset:
+    :param original_x:
+    :return:
+    """
+    limits = [[original_x[col].min(), original_x[col].max()] for col in original_x.columns.tolist()]
+    for rule in ruleset:
+        remove_indices = []
+        for i, v in enumerate(rule['limits']):
+            if v == limits[i]:
+                remove_indices.append(i)
+        rule['limits'] = item_remover(rule['limits'], remove_indices)
+        rule['columns'] = item_remover(rule['columns'], remove_indices)
+    return ruleset
+
+
+def cluster_rule_extractor(X_train, X_test, y_train, y_test, dataset_par, save_graph):
     MINIMUM_ACC = 0.7
     MAX_ROW = 30000
     LABEL_COL = dataset_par['output_name']
@@ -414,6 +443,7 @@ def new_rule_extractor(X_train, X_test, y_train, y_test, dataset_par, save_graph
 
     final_rules = complete_rule(X_train, results, overall_rules, LABEL_COL)
     rule_accuracy, rule_prediction, _ = rule_set_evaluator(results, final_rules)
+    final_rules = antecedent_pruning(final_rules, X_train)
     # print(final_rules)
     # cluster_plots(X, y, LABEL_COL)
     # cluster_plots(X, rule_prediction.round().astype(int), LABEL_COL)

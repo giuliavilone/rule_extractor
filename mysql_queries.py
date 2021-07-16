@@ -52,13 +52,13 @@ def argument_formatter(argument):
     return ret
 
 
-def open_connection():
+def open_connection(database):
     """
     Open the connection to the MySQL database
     :return:
     """
     try:
-        cnx = connection.MySQLConnection(user='root', password='', host='localhost', database='first_test_db')
+        cnx = connection.MySQLConnection(user='root', password='', host='localhost', database=database)
         return cnx
     except Error as err:
         if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
@@ -151,11 +151,11 @@ def create_arguments(conn, feature_set_name, graph_name, ruleset, conclusion_lis
 
 def mysql_queries_executor(**kwargs):
     """
-    Create the MySQL queries to create a new feature-set in the
+    Create the MySQL queries to create a new feature-set in a database
     :param kwargs:
     :return:
     """
-    conn = open_connection()
+    conn = open_connection(kwargs['database'])
     attribute_list = create_attribute_list(kwargs['ruleset'])
     conclusion_list = create_conclusion_list(kwargs['conclusions'])
     create_feature_set(conn, kwargs['feature_set_name'])

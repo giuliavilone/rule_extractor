@@ -22,7 +22,6 @@ def network_pruning(w, correct_x, correct_y, test_x, test_y, accuracy, in_item=N
     :param test_x: test dataset (independent variables)
     :param test_y: test dataset (dependent variable)
     :param accuracy: accuracy
-    :param columns: dictionary with the name and the positions of the columns of the input dataset
     :param in_item: in_item
     :return: miss-classified instances, pruned weights, accuracy of pruned model,
     """
@@ -85,7 +84,7 @@ def rule_evaluator(x, y, rule_list, orig_acc, class_list):
     predicted_y = np.empty(x.shape[0])
     predicted_y[:] = np.NaN
     for rule in rule_list:
-        predicted_y, _ = rule_elicitation(x, predicted_y, rule)
+        predicted_y, _ = rule_elicitation(x, rule)
     predicted_y[np.isnan(predicted_y)] = len(class_list) + 10
     # Calculate min and max of mismatched instances
     mismatched = [index for index, elem in enumerate(y) if elem != predicted_y[index]]

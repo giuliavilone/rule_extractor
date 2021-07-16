@@ -9,7 +9,7 @@ parameters = pd.read_csv('datasets-UCI/new_rules/summary.csv')
 data_path = 'datasets-UCI/new_rules/graph_files/'
 save_graph = True
 
-for df in [1, 3, 4]:
+for df in [0, 1, 3, 4]:
     dataset_par = parameters.iloc[df]
     print('-----------------------------------------------------------------------------------------')
     print("Dataset: ", dataset_par['dataset'])
@@ -24,8 +24,8 @@ for df in [1, 3, 4]:
         print('-------------------------------------- FINAL RULES --------------------------------------')
         print(final_rules)
         print('-----------------------------------------------------------------------------------------')
-        feature_set_name = 'NM' + dataset_par['dataset'] + "_ftrset"
-        graph_name = 'NM' + dataset_par['dataset'] + "_grp"
+        feature_set_name = dataset_par['dataset'] + "_ftrset"
+        graph_name = dataset_par['dataset'] + "_grp"
         if save_graph:
-            mysql_queries_executor(ruleset=final_rules, attacks=attack_list, conclusions=labels,
-                                   feature_set_name=feature_set_name, graph_name=graph_name)
+            mysql_queries_executor(database=dataset_par['database'], ruleset=final_rules, attacks=attack_list,
+                                   conclusions=labels, feature_set_name=feature_set_name, graph_name=graph_name)

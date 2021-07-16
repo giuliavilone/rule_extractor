@@ -36,11 +36,5 @@ def run_trepan(X_train, X_test, y_train, y_test, discrete_list, dataset_par, mod
         rule_labels.append(instance_label)
         predi_tree.append(instance_label)
 
-    completeness = len(predi_tree) / num_test_examples
-    avg_length = sum(final_rules) / len(final_rules)
-    overlap = 0
-
-    return rule_metrics_calculator(num_test_examples, y_test, rule_labels, predi_torch, perturbed_labels,
-                                   len(final_rules), completeness, avg_length, overlap, dataset_par['classes']
-                                   )
+    return rule_metrics_calculator(X_test, y_test, predi_torch, final_rules, dataset_par['classes'])
 

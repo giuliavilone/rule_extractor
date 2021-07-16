@@ -183,7 +183,6 @@ def rule_maker(df, intervals, combo_list, target_var, model):
     """
     Creates the IF-THEN rules
     :param df: input dataframe
-    :param x_train: training dataset
     :param intervals: list of intervals to build the rules
     :param combo_list: list of attributes to be analysed
     :param target_var: name of dependent variable
