@@ -132,11 +132,10 @@ def dataset_uploader(item, path, target_var='class', cross_split=5, apply_smothe
 
 def rule_elicitation(x, in_rule):
     """
-    Calculate the accuracy score of the input rule and the indexes of the instances that fire the input rule. The
-    accuracy score is calculated over the instances that are affected by the rule.
+    Return the list of the indexes of the samples in x that fire the input rule.
     :param x: dataframe containing the independent variables of the input instances
     :param in_rule: rule to be evaluated
-    :return: the accuracy score of the rule and the indexes of the instances that fire the rule
+    :return: list of indexes of the firing samples
     """
     indexes = []
     for item in range(len(in_rule['columns'])):
@@ -260,7 +259,8 @@ def attack_definer(in_df, final_rules, merge_rules=False):
     total_cover = []
     for rule_number in range(len(final_rules)):
         rule = final_rules[rule_number]
-        rule_cover = rule_elicitation(in_df, rule)
+        # rule_cover = rule_elicitation(in_df, rule)
+        rule_cover = rule['samples']
         rule_cover = {'rule_number': "R"+str(rule_number), 'rule_cover': rule_cover, 'rule_class': rule['class']}
         total_cover.append(rule_cover)
         rule['rule_number'] = "R"+str(rule_number)
@@ -269,8 +269,8 @@ def attack_definer(in_df, final_rules, merge_rules=False):
     for pair in itertools.combinations(total_cover, 2):
         a, b = pair
         if a['rule_class'] != b['rule_class']:
-            a_index = np.where(a['rule_cover'] == 1)[0]
-            b_index = np.where(b['rule_cover'] == 1)[0]
+            a_index = a['rule_cover']
+            b_index = b['rule_cover']
             comparison_index = np.intersect1d(a_index, b_index)
             if np.array_equal(a_index, b_index) and len(comparison_index) > 0:
                 ret.append({"source": a['rule_number'], "target": b['rule_number'], "type": "rebuttal"})

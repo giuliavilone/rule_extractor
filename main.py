@@ -13,7 +13,7 @@ parameters = pd.read_csv('datasets-UCI/new_rules/summary.csv')
 data_path = 'datasets-UCI/new_rules/'
 save_graph = True
 
-for df in [2]:
+for df in [0, 1, 3, 4]:
     metric_list = []
     dataset_par = parameters.iloc[df]
     label_col = dataset_par['output_name']
