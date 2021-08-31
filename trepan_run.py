@@ -1,7 +1,8 @@
 from keras.optimizers import SGD, Adagrad, Adam, Nadam
 import numpy as np
-from common_functions import perturbator, rule_metrics_calculator
+from common_functions import perturbator, rule_metrics_calculator, rule_write
 from trepan import Tree, Oracle
+from sklearn.metrics import accuracy_score
 
 
 def run_trepan(X_train, X_test, y_train, y_test, discrete_list, dataset_par, model):
@@ -16,25 +17,44 @@ def run_trepan(X_train, X_test, y_train, y_test, discrete_list, dataset_par, mod
     tree_obj.assign_levels(root, 0)
 
     # tree_obj.print_tree_levels(root)
-    final_rules = tree_obj.leaf_values(root)
-    print(final_rules)
-    # print(final_rules)
+    final_labels = tree_obj.leaf_values(root)
+    print(final_labels)
     tree_obj.print_tree_rule(root)
+    final_rules = tree_obj.rule_list(root)
+    print(final_rules)
 
     # calculate metrics
     num_test_examples = X_test.shape[0]
 
-    predi_tree = []
     predi_torch = np.argmax(model.predict(X_test), axis=1)
     perturbed_data = perturbator(X_test)
-    perturbed_labels = np.argmax(model.predict(perturbed_data), axis=1)
 
     rule_labels = []
+    perturbed_labels = []
     for i in range(0, num_test_examples):
         instance = X_test[i, :]
         instance_label = tree_obj.predict(instance, root)
         rule_labels.append(instance_label)
-        predi_tree.append(instance_label)
+        perturbed_instance = perturbed_data[i, :]
+        perturbed_labels.append(tree_obj.predict(perturbed_instance, root))
 
-    return rule_metrics_calculator(X_test, y_test, predi_torch, final_rules, dataset_par['classes'])
+    rule_write('TREPAN_', final_rules, dataset_par)
+    correctness = accuracy_score(y_test, rule_labels)
+    fidelity = accuracy_score(predi_torch, rule_labels)
+    robustness = accuracy_score(rule_labels, perturbed_labels)
+    rule_n = len(final_rules)
+    avg_length = 0
+    for item in final_rules:
+        avg_length += sum([len(d['n']) for d in item])
+    avg_length = avg_length / rule_n
+    class_fraction = len(set(final_labels)) / n_class
+    print("Completeness of the ruleset is: " + str(1))
+    print("Correctness of the ruleset is: " + str(correctness))
+    print("Fidelity of the ruleset is: " + str(fidelity))
+    print("Robustness of the ruleset is: " + str(robustness))
+    print("Number of rules : " + str(rule_n))
+    print("Average rule length: " + str(avg_length))
+    print("Fraction overlap: " + str(0))
+    print("Fraction of classes: " + str(class_fraction))
+    return [1, correctness, fidelity, robustness, rule_n, avg_length, 0, class_fraction]
 

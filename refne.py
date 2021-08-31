@@ -1,7 +1,7 @@
 import pandas as pd
 from keras.models import load_model
 import numpy as np
-from common_functions import rule_metrics_calculator, attack_definer
+from common_functions import rule_metrics_calculator, attack_definer, rule_write
 import random
 import copy
 import itertools
@@ -265,6 +265,7 @@ def refne_run(X_train, X_test, y_test, discrete_attributes, continuous_attribute
     # Calculation of metrics
     predicted_labels = np.argmax(model.predict(X_test), axis=1)
     metrics = rule_metrics_calculator(X_test, y_test, predicted_labels, final_rules, n_class)
+    rule_write('REFNE_', final_rules, dataset_par)
     if save_graph:
         attack_list, final_rules = attack_definer(X_test, final_rules, merge_rules=True)
         create_empty_file('REFNE_' + dataset_par['dataset'] + "_attack_list")

@@ -3,7 +3,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score
 import copy
 from common_functions import rule_elicitation, rule_metrics_calculator, attack_definer
-from common_functions import save_list, create_empty_file
+from common_functions import save_list, create_empty_file, rule_write
 from rxren_rxncn_functions import rule_pruning, ruleset_accuracy, rule_sorter, input_delete
 from rxren_rxncn_functions import model_pruned_prediction, rule_formatter
 from scipy.stats import mode
@@ -84,7 +84,8 @@ def rule_evaluator(x, y, rule_list, orig_acc, class_list):
     predicted_y = np.empty(x.shape[0])
     predicted_y[:] = np.NaN
     for rule in rule_list:
-        predicted_y, _ = rule_elicitation(x, rule)
+        indexes = rule_elicitation(x, rule)
+        predicted_y[indexes] = rule['class']
     predicted_y[np.isnan(predicted_y)] = len(class_list) + 10
     # Calculate min and max of mismatched instances
     mismatched = [index for index, elem in enumerate(y) if elem != predicted_y[index]]
@@ -165,6 +166,7 @@ def rxren_run(X_train, X_test, y_train, y_test, dataset_par, model, save_graph):
     X_test, _ = input_delete(ins_index, X_test)
     X_test = pd.DataFrame(X_test, columns=significant_columns.values())
     metrics = rule_metrics_calculator(X_test, y_test, predicted_labels, final_rules, n_class)
+    rule_write('RxREN_', final_rules, dataset_par)
     if save_graph:
         attack_list, final_rules = attack_definer(X_test, final_rules)
         create_empty_file('RxREN_' + dataset_par['dataset'] + "_attack_list")

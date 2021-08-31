@@ -5,9 +5,7 @@ from keras.optimizers import SGD, Adagrad, Adam, Nadam
 import numpy as np
 from sklearn.metrics import accuracy_score
 from sklearn.tree import DecisionTreeClassifier, export_text, export_graphviz, plot_tree
-from common_functions import perturbator, create_model, model_train, ensemble_predictions, dataset_uploader
-from common_functions import rule_metrics_calculator
-import sys
+from common_functions import perturbator, create_model, model_train, ensemble_predictions, rule_write
 
 
 # Functions
@@ -148,6 +146,7 @@ def metric_calculator(rule_class, original_class, model_class, perturbed_class, 
         correct += (rule_class[i] == original_class[i])
         rob += (rule_class[i] == perturbed_class[i])
 
+    print("Completeness of the ruleset is: 1")
     correctness = correct / data_len
     print("Correctness of the ruleset is: " + str(correctness))
     fidelity = fidel / data_len
@@ -161,6 +160,7 @@ def metric_calculator(rule_class, original_class, model_class, perturbed_class, 
     labels_considered = set(rule_class)
     labels_considered.discard(n_classes + 10)
     class_fraction = len(set(labels_considered)) / n_classes
+    print("Fraction overlap: 0")
     print("Fraction of classes: " + str(class_fraction))
     return [1.0, correctness, fidelity, robustness, rule_n, avg_length, 0, class_fraction]
 
@@ -168,7 +168,7 @@ def metric_calculator(rule_class, original_class, model_class, perturbed_class, 
 def run_c45_pane(X_train, X_test, y_test, dataset_par, model, labels):
     print(labels)
     x_tot, y_tot, clf = create_tree(X_train, model)
-    rules = export_text(clf)
+    # rules = export_text(clf)
 
     # Showing the rules
     # print_decision_tree(clf)
@@ -181,6 +181,7 @@ def run_c45_pane(X_train, X_test, y_test, dataset_par, model, labels):
 
     num_test_examples = X_test.shape[0]
     depths = get_node_depths(clf.tree_)
+    rule_write('C45_', clf, dataset_par)
 
     return metric_calculator(predicted_labels, y_test, model_test_labels, perturbed_labels, depths, len(labels),
                              num_test_examples)

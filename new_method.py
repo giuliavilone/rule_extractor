@@ -211,8 +211,8 @@ def rule_set_evaluator(original_y, rule_set, rule_area_only=False):
     return accuracy, ret_labels, empty_index
 
 
-def rule_extractor(original_data, original_label, in_df, label_col, minimum_acc, rule_set, number_clusters=2,
-                   linkage='complete', min_sample=300):
+def rule_extractor(original_data, original_label, in_df, label_col, minimum_acc, rule_set, number_clusters=5,
+                   linkage='ward', min_sample=100):
     """
     Return the ruleset automatically extracted to mimic the logic of a machine-learned model.
     :param original_data:
@@ -308,6 +308,7 @@ def complete_rule(in_df, original_y, rule_list, label_col):
     if len(empty_index) > 0:
         uncovered_instances = new_df.iloc[empty_index]
         min_dist = minimum_distance(uncovered_instances, rule_list, label_col)
+        print(min_dist)
         min_dist_per_instance = find_min_position(min_dist)
         min_rules = set(min_dist_per_instance)
         for m_rule in min_rules:
@@ -369,7 +370,7 @@ def ruleset_definer(original_x, original_y, dataset_par, weights, out_column, mi
     y = model_pruned_prediction([], X, dataset_par, in_weight=weights)
     X[out_column] = y
 
-    rules = rule_extractor(original_x, original_y, X, out_column, minimum_acc, [], number_clusters=4,
+    rules = rule_extractor(original_x, original_y, X, out_column, minimum_acc, [], number_clusters=2,
                            min_sample=min_row)
     rule_accuracy, _, _ = rule_set_evaluator(original_y, rules)
     final_rules = rule_pruning(rules, rule_accuracy, original_y)
@@ -405,8 +406,8 @@ def antecedent_pruning(ruleset, original_x):
 
 
 def cluster_rule_extractor(X_train, X_test, y_train, y_test, dataset_par, save_graph):
-    MINIMUM_ACC = 0.7
-    MAX_ROW = 30000
+    MINIMUM_ACC = 0.8
+    MAX_ROW = 35000
     LABEL_COL = dataset_par['output_name']
     n_class = dataset_par['classes']
     MIN_ROW = dataset_par['minimum_row']
@@ -423,6 +424,7 @@ def cluster_rule_extractor(X_train, X_test, y_train, y_test, dataset_par, save_g
     X_test, _ = remove_column(X_test, significant_features)
     results = model_pruned_prediction([], X_train, dataset_par, in_weight=weights)
     print("Model pruned")
+    print(X_train.size)
 
     if len(X_train) > MAX_ROW:
         overall_rules = []

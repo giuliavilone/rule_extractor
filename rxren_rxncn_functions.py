@@ -80,7 +80,8 @@ def rule_pruning(train_x, train_y, rule_set, classes_n):
 def ruleset_accuracy(x_arr, y_list, rule_set, classes):
     predicted_y = np.empty(x_arr.shape[0])
     predicted_y[:] = np.NaN
-    predicted_y, _ = rule_elicitation(x_arr, predicted_y, rule_set)
+    indexes = rule_elicitation(x_arr, rule_set)
+    predicted_y[indexes] = rule_set['class']
     predicted_y[np.isnan(predicted_y)] = classes + 10
     ret = accuracy_score(y_list, predicted_y)
     return ret

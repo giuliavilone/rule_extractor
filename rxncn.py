@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score
 import copy
-from common_functions import rule_metrics_calculator, rule_elicitation, attack_definer
+from common_functions import rule_metrics_calculator, rule_elicitation, attack_definer, rule_write
 from common_functions import save_list, create_empty_file
 import dictlib
 from sklearn.model_selection import train_test_split
@@ -122,7 +122,8 @@ def rule_evaluator(x, y, rule_list, orig_acc, class_list):
     predicted_y = np.empty(x.shape[0])
     predicted_y[:] = np.NaN
     for rule in rule_list:
-        predicted_y, _ = rule_elicitation(x, predicted_y, rule)
+        indexes = rule_elicitation(x, rule)
+        predicted_y[indexes] = rule['class']
     predicted_y[np.isnan(predicted_y)] = len(class_list) + 10
     for rule_number in range(len(rule_list)):
         rule = rule_list[rule_number]
@@ -201,6 +202,7 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model, save_graph):
         X_tot = pd.DataFrame(X_tot, columns=sig_cols.values())
         # print(final_rules)
         metrics = rule_metrics_calculator(X_tot, y_tot, predicted_labels, final_rules, n_class)
+        rule_write('RxNCM_', final_rules, dataset_par)
         if save_graph:
             attack_list, final_rules = attack_definer(X_tot, final_rules)
             create_empty_file('RxNCM_' + dataset_par['dataset'] + "_attack_list")

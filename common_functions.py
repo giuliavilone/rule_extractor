@@ -299,3 +299,8 @@ def save_list(in_list, filename):
 def load_list(filename, path):
     with open(path + filename + '.txt', 'rb') as fp:
         return pickle.load(fp)
+
+
+def rule_write(method_name, final_rules, dataset_par, path='final_rules/'):
+    create_empty_file(path + method_name + dataset_par['dataset'] + "_final_rules")
+    save_list(final_rules, path + method_name + dataset_par['dataset'] + "_final_rules")

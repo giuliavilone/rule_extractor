@@ -4,7 +4,6 @@ import numpy as np
 from scipy.stats import gaussian_kde, entropy, mode
 from statsmodels.stats.proportion import proportion_confint
 import copy
-import sys
 
 
 class Oracle:
@@ -542,3 +541,16 @@ class Tree:
         if root.right is not None:
             self.leaf_values(root.right, ret_list)
         return ret_list
+
+    def rule_list(self, root, ret=[]):
+        if self.is_leaf(root):
+            rule = []
+            for constraint in root.constraints.constraint:
+                rule.append(constraint)
+            ret.append(rule)
+        else:
+            if root.left is not None:
+                self.rule_list(root.left, ret=ret)
+            if root.right is not None:
+                self.rule_list(root.right, ret=ret)
+        return ret
