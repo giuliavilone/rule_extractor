@@ -1,2 +1,9 @@
-,method,complete,correctness,fidelity,robustness,rule_n,avg_length,overlap,class_fraction
-0,NEW METHOD,1.0,0.5892901139513397,0.7548275331074839,0.1955728364644287,104,16.76923076923077,0.9824684323991376,1.0
+Metric,Decision tree,Argumentation framework
+complete,100.00%,100.00%
+correctness,65.65%,64.40%
+fidelity,89.46%,78.69%
+robustness,100.00%,23.69%
+rule_n,72,16
+avg_length,9.77712609970675,10.8888888888889
+overlap,0.00%,83.59%
+class_fraction,100.00%,100.00%

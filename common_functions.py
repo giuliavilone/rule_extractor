@@ -74,9 +74,14 @@ def ensemble_predictions(members, test_x):
     return results
 
 
-def dataset_uploader(item, path, target_var='class', cross_split=5, apply_smothe=True, remove_columns=True):
-    le = LabelEncoder()
-    file_name = item['dataset']
+def data_file(file_name, path, remove_columns=True):
+    """
+    Upload csv files containing the original data and remove columns that are not good predictors
+    :param file_name:
+    :param path:
+    :param remove_columns:
+    :return: Pandas dataframe
+    """
     feat_to_be_deleted = {'bank': ['euribor3m', 'emp.var.rate'],
                           'cover_type': ['Wilderness_Area1', 'Aspect', 'Hillshade_9am', 'Hor_Dist_Hydrology'],
                           'letter_recognition': ['y-box', 'high', 'width'],
@@ -90,28 +95,38 @@ def dataset_uploader(item, path, target_var='class', cross_split=5, apply_smothe
                           'occupancy': ['HumidityRatio', 'Temperature'],
                           'shuttle': ['S7', 'S8', 'S9']
                           }
-    dataset = pd.read_csv(path + item['dataset'] + '.csv')
+    dataset = pd.read_csv(path + file_name + '.csv')
     dataset = dataset.dropna().reset_index(drop=True)
     if remove_columns:
         if file_name in feat_to_be_deleted.keys():
             columns_to_be_deleted = [item for item in dataset.columns.tolist() if item in feat_to_be_deleted[file_name]]
             dataset = dataset.drop(columns=columns_to_be_deleted)
+    return dataset
+
+
+def column_type_finder(dataset, target_var):
     col_types = dataset.dtypes
-    out_disc_temp = []
+    discrete_column_names = []
     for index, value in col_types.items():
         if value in ['object', 'bool']:
             if index != target_var:
                 dataset = pd.get_dummies(dataset, columns=[index])
-                out_disc_temp.append(index)
+                discrete_column_names.append(index)
     # The number of the discrete features must take into account the new dummy columns
     independent_columns = [item for item in dataset.columns.tolist() if item != target_var]
     out_disc = []
-    for col in out_disc_temp:
+    for col in discrete_column_names:
         out_disc += [i for i, v in enumerate(independent_columns) if v.find(col + '_') > -1]
     out_cont = [i for i, v in enumerate(independent_columns) if i not in out_disc]
+    return dataset, discrete_column_names, out_disc, out_cont
+
+
+def dataset_uploader(file_name, path, target_var='class', cross_split=5, apply_smothe=True, remove_columns=True):
+    le = LabelEncoder()
+    dataset = data_file(file_name, path, remove_columns=remove_columns)
+    dataset, _, out_disc, out_cont = column_type_finder(dataset, target_var)
 
     # Separating independent variables from the target one
-
     y = le.fit_transform(dataset[target_var].tolist())
     labels = list(le.fit(dataset[target_var].tolist()).classes_)
     x = dataset.drop(columns=[target_var])
@@ -263,7 +278,7 @@ def attack_definer(in_df, final_rules, merge_rules=False):
         rule_cover = rule['samples']
         rule_cover = {'rule_number': "R"+str(rule_number), 'rule_cover': rule_cover, 'rule_class': rule['class']}
         total_cover.append(rule_cover)
-        rule['rule_number'] = "R"+str(rule_number)
+        rule['rule_number'] = "Rule "+str(rule_number)
     if merge_rules:
         final_rules, total_cover = rule_merger(final_rules, total_cover)
     for pair in itertools.combinations(total_cover, 2):

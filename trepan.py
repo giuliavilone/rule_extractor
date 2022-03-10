@@ -4,6 +4,8 @@ import numpy as np
 from scipy.stats import gaussian_kde, entropy, mode
 from statsmodels.stats.proportion import proportion_confint
 import copy
+from multiprocessing import cpu_count
+from multiprocessing.pool import ThreadPool as Pool
 
 
 class Oracle:
@@ -263,6 +265,14 @@ class Tree:
                 m -= 1
         return out_test, test_changed, ret_gain
 
+    def looping_mofn_test(self, test, feature_dict, samples, labels, original_gain, beam_changed):
+        if beam_changed == 1:
+            for feature in feature_dict:
+                for threshold in feature_dict[feature]:
+                    test, beam_changed, original_gain = self.expand_mofn_test(test, feature, threshold, samples, labels,
+                                                                              original_gain)
+        return test, beam_changed, original_gain
+
     def make_mofn_tests(self, best_test, feat_split_points, samples, labels):
         """
         Finds the best m-of-n test, using a beam width of 2.
@@ -277,30 +287,27 @@ class Tree:
         init_gain = self.binary_info_gain(best_test[1], samples[:, best_test[0]], labels)
         beam = [[1, [(best_test[0], best_test[1], False)]], [1, [(best_test[0], best_test[1], True)]]]
         current_gains = [init_gain, init_gain]
-        beam_changed = 1
+        beam_changed = [1, 1]
         n = 1
         # Set up loop to repeat until beam isn't changed
-        while beam_changed:
+        while sum(beam_changed) > 0:
             print('Test of size %d...' % n)
             n = n + 1
-            # beam_changed = 0
-            # Loop over the current best m-of-n tests in beam
-            for ix in range(len(beam)):
-                # Loop over the single-features in candidate tests dict
-                for feature in feat_split_points:
-                    # Loop over the thresholds for the feature
-                    for threshold in feat_split_points[feature]:
-                        # Add selected feature+threshold to to current test
-                        beam[ix], beam_changed, current_gains[ix] = self.expand_mofn_test(beam[ix], feature, threshold,
-                                                                                          samples, labels,
-                                                                                          current_gains[ix])
-            # Set new tests in beam and associated gains
+            # Each beam is analysed in a separate process to speed up the calculations
+            args = ((beam[ix], feat_split_points, samples, labels, current_gains[ix], beam_changed[ix])
+                    for ix in range(len(beam)))
+            pool = Pool(cpu_count())
+            results = pool.starmap(self.looping_mofn_test, args)
+            for r in range(len(results)):
+                beam[r] = results[r][0]
+                beam_changed[r] = results[r][1]
+                current_gains[r] = results[r][2]
         # Return the best test in beam
         return beam[np.argmax(current_gains)]
 
     def make_candidate_tests(self, feat_values, labels, feature_number):
         """
-        A function that should take one feature and all samples, and return the the possible breakpoints for the
+        A function that takes one feature and all samples, and return the possible breakpoints for the
         input feature. These are the midpoints between any two samples that do not have the same label.
         If the feature is discrete, the breakpoints correspond to its unique value.
         """

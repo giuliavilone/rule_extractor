@@ -115,16 +115,15 @@ def metrics_importer(path_name):
                               'complete': 'Completeness', 'correctness': 'Correctness', 'fidelity': 'Fidelity',
                               'robustness': 'Robustness', 'overlap': 'Fraction overlap'
                               }, inplace=True)
-        mx_df['Dataset'] = str(mx[63:-8])
+        mx_df['Dataset'] = str(mx[63:-4])
         tot_df = tot_df.append(mx_df, ignore_index=True)
 
     return tot_df
 
 
-dataset_correlation = True
+dataset_correlation = False
 if dataset_correlation:
     path = "/home/d18126441/PycharmProjects/rule_extractor/datasets-UCI/new_rules/hotel_bookings.csv"
-
     plot_matrix = True
     best_combination = False
     for filename in glob.glob(path):
@@ -150,12 +149,14 @@ if dataset_correlation:
                 best_feat = find_best_combination(df, out_class, high_corr_feat)
                 best_feat.to_csv('best_feat_' + dataset_name + '.csv')
 
-metrics_correlation = False
+metrics_correlation = True
 if metrics_correlation:
     path = '/home/d18126441/PycharmProjects/rule_extractor/metrics/*.csv'
     metrics_df = metrics_importer(path)
     metrics_df.to_csv('metrics.csv')
     print(metrics_df)
-    corr_matrix = metrics_df.corr().round(4)
+    corr_matrix = metrics_df.corr(method='spearman').round(4)
     print(corr_matrix)
     correlation_matrix_plot(corr_matrix, '', save_corr_matrix=False)
+
+
