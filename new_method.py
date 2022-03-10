@@ -465,7 +465,7 @@ def cluster_rule_extractor(x_train, x_test, y_train, y_test, dataset_par, save_g
 
     metrics = rule_metrics_calculator(X_train, np.concatenate([y_train, y_test], axis=0), results, final_rules, n_class)
     if save_graph:
-        attack_list, final_rules = attack_definer(X_train, final_rules)
+        attack_list, final_rules = attack_definer(final_rules)
         create_empty_file('NEW_METHOD_' + dataset_par['dataset'] + "_attack_list")
         save_list(attack_list, 'NEW_METHOD_' + dataset_par['dataset'] + "_attack_list")
         create_empty_file('NEW_METHOD_' + dataset_par['dataset'] + "_final_rules")

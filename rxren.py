@@ -61,6 +61,16 @@ def network_pruning(w, correct_x, correct_y, test_x, test_y, accuracy, in_item=N
 
 
 def rule_limits_calculator(c_x, c_y, miss_classified_list, significant_neurons, error, alpha=0.1):
+    """
+    Determine the ranges of the wrongly classified instances for each significant variable
+    :param c_x: Pandas dataframe containing the input dataset
+    :param c_y: list containing the dependent variable of the input dataset
+    :param miss_classified_list: dictionary containing the wrongly classified instance for each input variable
+    :param significant_neurons: list of columns that have a relevant impact on the model's predictions
+    :param error: number of incorrectly classified examples of trained model without an input variable
+    :param alpha: tolerance threshold (see paper)
+    :return:
+    """
     c_tot = np.column_stack((c_x, c_y))
     grouped_miss_class = []
     for i in significant_neurons:
@@ -79,6 +89,15 @@ def rule_limits_calculator(c_x, c_y, miss_classified_list, significant_neurons, 
 
 
 def rule_evaluator(x, y, rule_list, orig_acc, class_list):
+    """
+    Evaluate the accuracy of the input ruleset
+    :param x: Pandas dataframe containing the evaluation dataset
+    :param y: list of recorded labels of the evaluation dataset
+    :param rule_list: ruleset
+    :param orig_acc: original accuracy for each output class
+    :param class_list: list of the labels of the output classes
+    :return: the accuracy score of the input ruleset for each output class
+    """
     ret_rules = copy.deepcopy(rule_list)
     rule_accuracy = copy.deepcopy(orig_acc)
     predicted_y = np.empty(x.shape[0])
@@ -168,7 +187,7 @@ def rxren_run(X_train, X_test, y_train, y_test, dataset_par, model, save_graph):
     metrics = rule_metrics_calculator(X_test, y_test, predicted_labels, final_rules, n_class)
     rule_write('RxREN_', final_rules, dataset_par)
     if save_graph:
-        attack_list, final_rules = attack_definer(X_test, final_rules)
+        attack_list, final_rules = attack_definer(final_rules)
         create_empty_file('RxREN_' + dataset_par['dataset'] + "_attack_list")
         save_list(attack_list, 'RxREN_' + dataset_par['dataset'] + "_attack_list")
         create_empty_file('RxREN_' + dataset_par['dataset'] + "_final_rules")

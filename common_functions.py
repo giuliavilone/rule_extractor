@@ -11,7 +11,6 @@ import itertools
 import pickle
 import os
 from sklearn.metrics import accuracy_score
-import sys
 
 
 def vote_db_modifier(in_df):
@@ -28,7 +27,21 @@ def vote_db_modifier(in_df):
 def create_model(train_x, n_classes, neurons, optimizer='Adam', init_mode='glorot_uniform', activation='sigmoid',
                  dropout_rate=0.0, loss='categorical_crossentropy', out_activation='softmax'
                  ):
-    # create model
+    """
+    Create a deep neural network with the following characteristics: 1) the input layer, densely connected, coupled with
+    a dropout layer, 2) a densely-connected hidden layer coupled with a dropout layer, and 3) the output layer, also
+    densely connected
+    :param train_x: Pandas dataset containing the training dataset
+    :param n_classes: number of output classes
+    :param neurons: number of neurons of the hidden layer
+    :param optimizer: optimising function
+    :param init_mode: layer weight initializer
+    :param activation: activation function of input and hidden layers
+    :param dropout_rate: dropout rate to be used in the dropout layers
+    :param loss: loss function
+    :param out_activation: activation function of output layer
+    :return: compiled model object
+    """
     model = Sequential()
     model.add(Dense(neurons, input_dim=train_x.shape[1], activation=activation, kernel_initializer=init_mode))
     model.add(Dropout(dropout_rate))
@@ -41,6 +54,18 @@ def create_model(train_x, n_classes, neurons, optimizer='Adam', init_mode='gloro
 
 
 def model_train(train_x, train_y, test_x, test_y, model, model_name, n_epochs=100, batch_size=10):
+    """
+    Train a compiled model and return it
+    :param train_x: Pandas dataset containing the training dataset
+    :param train_y: list of output classes as recorded in the training dataset
+    :param test_x: Pandas dataset containing the evaluation dataset
+    :param test_y: list of output classes as recorded in the evaluation dataset
+    :param model: compiled model object
+    :param model_name: path and filename where to store the trained model
+    :param n_epochs: number of training epochs
+    :param batch_size: number of samples to be propagated through the network.
+    :return: trained model, training history object
+    """
     check_pointer = ModelCheckpoint(filepath=model_name,
                                     save_weights_only=False,
                                     monitor='accuracy',
@@ -64,7 +89,7 @@ def perturbator(in_df, mu=0, sigma=0.1):
 
 
 def ensemble_predictions(members, test_x):
-    # make an ensemble prediction for multi-class classification
+    # return the predictions of an ensemble model for multi-class classification
     # make predictions
     y_hats = [model.predict(test_x) for model in members]
     y_hats = np.array(y_hats)
@@ -76,11 +101,12 @@ def ensemble_predictions(members, test_x):
 
 def data_file(file_name, path, remove_columns=True):
     """
-    Upload csv files containing the original data and remove columns that are not good predictors
-    :param file_name:
-    :param path:
-    :param remove_columns:
-    :return: Pandas dataframe
+    Upload csv files containing the original data and remove columns that are not suitable as predictors
+    :param file_name: name of the csv file to be uploaded
+    :param path: path to the csv file to be uploaded
+    :param remove_columns: boolean variable. If true, the columns listed in the variable "feat_to_be_deleted" are
+    deleted
+    :return: Pandas dataframe containing the data retrieved from the csv file
     """
     feat_to_be_deleted = {'bank': ['euribor3m', 'emp.var.rate'],
                           'cover_type': ['Wilderness_Area1', 'Aspect', 'Hillshade_9am', 'Hor_Dist_Hydrology'],
@@ -105,6 +131,13 @@ def data_file(file_name, path, remove_columns=True):
 
 
 def column_type_finder(dataset, target_var):
+    """
+    Define the type of data contained in the input Pandas dataframe
+    :param dataset: Pandas dataframe
+    :param target_var: name of the dependent variable (to be predicted by a model)
+    :return: the input dataset, the names of the columns containing categorical variable, the position of the columns
+    containing discrete and continuous variables
+    """
     col_types = dataset.dtypes
     discrete_column_names = []
     for index, value in col_types.items():
@@ -122,6 +155,21 @@ def column_type_finder(dataset, target_var):
 
 
 def dataset_uploader(file_name, path, target_var='class', cross_split=5, apply_smothe=True, remove_columns=True):
+    """
+    Upload a dataset from a csv file into a Pandas dataframe and applies, if requested, the SMOTE algorithm to
+    oversample the minority class(es). The input dataset is split into a list of training and evaluation datasets with
+    the Stratified K Fold algorithm
+    :param file_name: name of the csv file to be uploaded
+    :param path: path to the csv file to be uploaded
+    :param target_var: name of the dependent variable (to be predicted by a model)
+    :param cross_split: number of folds for the Stratified K Fold algorithm
+    :param apply_smothe: boolean variable. If true, the SMOTE oversampling algorithm is applied
+    :param remove_columns: boolean variable. If true, the columns listed in the variable "feat_to_be_deleted" are
+    deleted (see function data_file)
+    :return: list of Pandas datasets containing the training and evaluations datasets, a separate list of the output
+    variable of the training and evaluation datasets, list of the output class labels, list of the discrete and
+    continuous variables
+    """
     le = LabelEncoder()
     dataset = data_file(file_name, path, remove_columns=remove_columns)
     dataset, _, out_disc, out_cont = column_type_finder(dataset, target_var)
@@ -147,7 +195,7 @@ def dataset_uploader(file_name, path, target_var='class', cross_split=5, apply_s
 
 def rule_elicitation(x, in_rule):
     """
-    Return the list of the indexes of the samples in x that fire the input rule.
+    Return the list of the indexes of the samples in x that fire the input rule
     :param x: dataframe containing the independent variables of the input instances
     :param in_rule: rule to be evaluated
     :return: list of indexes of the firing samples
@@ -167,7 +215,7 @@ def rule_set_evaluator(x, rule_set):
     """
     Evaluates a set of rules by eliciting each of them and calculate the overall accuracy. The rules are first
     sorted by the number of instances that they cover (in reverse order) so that the bigger rules do not cancel out the
-    smaller one in case of overlapping rules.
+    smaller one in case of overlapping rules
     :param x:
     :param rule_set:
     :return:
@@ -188,7 +236,7 @@ def rule_set_evaluator(x, rule_set):
 
 def overlap_calculator(in_df, rules):
     """
-    Calculate the overlap area
+    Calculate the overlap areas between rules
     :param in_df:
     :param rules:
     :return: iny
@@ -207,6 +255,11 @@ def rule_metrics_calculator(in_df, y_test, model_labels, final_rules, n_classes)
     """
     Calculate the correctness, fidelity, robustness and number of rules. The completeness, average length and number
     of rules are calculated in a different way for each rule extractor and passed as inputs
+    :param in_df: Pandas dataframe
+    :param y_test: list of the original output classes of the samples contained in in_df
+    :param model_labels: list of the predicted output classes of the samples contained in in_df
+    :param final_rules: list of the rules contained in the final ruleset
+    :param n_classes: number of output classes
     :return: list of metrics
     """
     rule_n = len(final_rules)
@@ -244,10 +297,11 @@ def rule_metrics_calculator(in_df, y_test, model_labels, final_rules, n_classes)
 def rule_merger(ruleset, cover_list):
     """
     This function checks if there are rules with the same class and list of columns. If this is the case, these rules
-    are merged together and will be treated as 'OR' logical disjunction
-    :param ruleset:
-    :param cover_list:
-    :return:
+    are merged together and will be treated as 'OR' logical disjunction. The cover sets of these rules are joined
+    together
+    :param ruleset: list of rules
+    :param cover_list: list of arrays containing the cover set of the rules of the input ruleset
+    :return: modified ruleset with joint rules, updated list of the cover sets of the modified ruleset
     """
     ix1 = 0
     while ix1 < len(ruleset):
@@ -269,7 +323,14 @@ def rule_merger(ruleset, cover_list):
     return ruleset, cover_list
 
 
-def attack_definer(in_df, final_rules, merge_rules=False):
+def attack_definer(final_rules, merge_rules=False):
+    """
+    Define the attack between conflicting rules
+    :param final_rules: list of rules
+    :param merge_rules: boolean variable. If true, two rules with the same conclusion and same list of variables in
+    their antecedents will be joined together (see rule_merger function)
+    :return: list of attackers, modified ruleset with merged rules
+    """
     ret = []
     total_cover = []
     for rule_number in range(len(final_rules)):
@@ -317,5 +378,6 @@ def load_list(filename, path):
 
 
 def rule_write(method_name, final_rules, dataset_par, path='final_rules/'):
+    # Write ruleset into files
     create_empty_file(path + method_name + dataset_par['dataset'] + "_final_rules")
     save_list(final_rules, path + method_name + dataset_par['dataset'] + "_final_rules")

@@ -12,6 +12,14 @@ from rxren_rxncn_functions import model_pruned_prediction, prediction_reshape, r
 
 # Functions
 def prediction_classifier(orig_y, predict_y, comparison="misclassified"):
+    """
+    Return the list of the correctly classified or miss-classified input instances for each output class
+    :param orig_y: list of the original labels of the input instances
+    :param predict_y: list of the predicted labels of the input instances
+    :param comparison: type of comparison to be done between the two label lists. If "misclassified", the function
+    returns the list of the instances wrongly classified by a model, otherwise those that were correctly classified.
+    :return: list of the indexes of the instances that satisfy the comparison parameter
+    """
     ret = {}
     out_classes = np.unique(orig_y)
     for cls in out_classes:
@@ -24,7 +32,7 @@ def prediction_classifier(orig_y, predict_y, comparison="misclassified"):
 
 def network_pruning(w, correct_x, correct_y, test_x, test_y, accuracy, columns, in_item=None):
     """
-    Remove the insignificant input neurons of the input model, based on the weight w.
+    Remove the insignificant input neurons of the input model, based on the weight w
     :param w: model's weights
     :param correct_x: set of correctly classified instances (independent variables)
     :param correct_y: set of correctly classified instances (dependent variable)
@@ -73,7 +81,7 @@ def correct_examples_finder(correct_x, correct_y, in_item, significant_cols, in_
     """
     This function finds the examples correctly classified by the pruned network for each significant input neuron. The
     paper is not clear on how to do that, so my interpretation is that these are the examples correctly classified
-    when the pruned network contains only the significant neuron under analysis.
+    when the pruned network contains only the significant neuron under analysis
     :param correct_x: correctX
     :param correct_y: correctX
     :param in_item: correctX
@@ -91,6 +99,12 @@ def correct_examples_finder(correct_x, correct_y, in_item, significant_cols, in_
 
 
 def combine_dict_list(dict_1, dict_2):
+    """
+    Combined the values of two dictionaries sharing the same key into a list
+    :param dict_1: first dictionary to be combined
+    :param dict_2: second dictionary to be combined
+    :return: combined dictionary
+    """
     ret = {}
     for key, value in dict_1.items():
         temp_ret = dictlib.union_setadd(dict_1[key], dict_2[key])
@@ -101,6 +115,15 @@ def combine_dict_list(dict_1, dict_2):
 
 
 def rule_limits_calculator(c_x, c_y, classified_dict, significant_cols, alpha=0.1):
+    """
+    Determine the ranges of the correctly and wrongly classified instances for each significant variable
+    :param c_x: Pandas dataframe containing the input dataset
+    :param c_y: list containing the dependent variable of the input dataset
+    :param classified_dict: dictionary containing the correctly and wrongly classified instance for each input variable
+    :param significant_cols: list of columns that have a relevant impact on the model's predictions
+    :param alpha: tolerance threshold (see paper)
+    :return:
+    """
     c_tot = np.column_stack((c_x, c_y))
     grouped_miss_class = {k: [] for k in np.unique(c_y)}
     for i in range(c_x.shape[1]):
@@ -117,6 +140,15 @@ def rule_limits_calculator(c_x, c_y, classified_dict, significant_cols, alpha=0.
 
 
 def rule_evaluator(x, y, rule_list, orig_acc, class_list):
+    """
+    Evaluate the accuracy of the input ruleset
+    :param x: Pandas dataframe containing the evaluation dataset
+    :param y: list of recorded labels of the evaluation dataset
+    :param rule_list: ruleset
+    :param orig_acc: original accuracy for each output class
+    :param class_list: list of the labels of the output classes
+    :return: the accuracy score of the input ruleset for each output class
+    """
     ret = copy.deepcopy(rule_list)
     rule_accuracy = copy.deepcopy(orig_acc)
     predicted_y = np.empty(x.shape[0])
@@ -162,20 +194,20 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model, save_graph):
 
     correctX = X_train[[results[i] == y_train[i] for i in range(len(y_train))]]
     print('Number of correctly classified examples', correctX.shape)
-    correcty = y_train[[results[i] == y_train[i] for i in range(len(y_train))]]
+    correct_y = y_train[[results[i] == y_train[i] for i in range(len(y_train))]]
     acc = accuracy_score(results, y_train)
     print("Accuracy of original model on the train dataset: ", acc)
-    test_pred = prediction_reshape(model.predict(X_val))
-    test_acc = accuracy_score(test_pred, y_val)
+    test_predicted = prediction_reshape(model.predict(X_val))
+    test_acc = accuracy_score(test_predicted, y_val)
     print("Accuracy of original model on the validation dataset: ", test_acc)
 
-    miss_dict, pruned_x, pruned_w, err, sig_cols = network_pruning(weights, correctX, correcty, X_val, y_val,
+    miss_dict, pruned_x, pruned_w, err, sig_cols = network_pruning(weights, correctX, correct_y, X_val, y_val,
                                                                    test_acc, column_dict, in_item=dataset_par)
 
-    correct_dict = correct_examples_finder(pruned_x, correcty, dataset_par, sig_cols, in_weight=pruned_w)
+    correct_dict = correct_examples_finder(pruned_x, correct_y, dataset_par, sig_cols, in_weight=pruned_w)
     final_dict = combine_dict_list(miss_dict, correct_dict)
 
-    rule_limits = rule_limits_calculator(pruned_x, correcty, final_dict, sig_cols, alpha=alpha)
+    rule_limits = rule_limits_calculator(pruned_x, correct_y, final_dict, sig_cols, alpha=alpha)
     rule_limits = rule_formatter(rule_limits)
 
     if len(rule_limits) > 0:
@@ -204,7 +236,7 @@ def rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model, save_graph):
         metrics = rule_metrics_calculator(X_tot, y_tot, predicted_labels, final_rules, n_class)
         rule_write('RxNCM_', final_rules, dataset_par)
         if save_graph:
-            attack_list, final_rules = attack_definer(X_tot, final_rules)
+            attack_list, final_rules = attack_definer(final_rules)
             create_empty_file('RxNCM_' + dataset_par['dataset'] + "_attack_list")
             save_list(attack_list, 'RxNCM_' + dataset_par['dataset'] + "_attack_list")
             create_empty_file('RxNCM_' + dataset_par['dataset'] + "_final_rules")
