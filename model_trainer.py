@@ -3,10 +3,14 @@ from keras.models import Sequential
 from keras.layers import Dense
 from keras.layers import Dropout
 from keras.utils import to_categorical
+from keras.wrappers.scikit_learn import KerasClassifier
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import StratifiedKFold
+from sklearn.inspection import permutation_importance
 from imblearn.over_sampling import SMOTE
+from common_functions import dataset_uploader
+from matplotlib import pyplot
 
 
 def create_model(train_x, n_classes, neurons, optimizer='Adam', init_mode='glorot_uniform',
@@ -32,7 +36,7 @@ def create_model(train_x, n_classes, neurons, optimizer='Adam', init_mode='gloro
 
 def model_train(train_x, train_y, test_x, test_y, model, model_name, n_classes, n_epochs=1000, batch_size=10):
     check_pointer = ModelCheckpoint(filepath=model_name, save_weights_only=False, monitor='accuracy',
-                                    save_best_only=True,verbose=1
+                                    save_best_only=True, verbose=1
                                     )
     early_stop = EarlyStopping(monitor='val_accuracy', patience=5)
     history = model.fit(train_x, to_categorical(train_y, num_classes=n_classes),
@@ -93,12 +97,53 @@ def model_creator(item, target_var='class', cross_split=5, remove_columns=True):
     return ret
 
 
-parameters = pd.read_csv('datasets/summary_new2.csv')
-dataset_par = parameters.iloc[14]
-print('--------------------------------------------------')
-print(dataset_par['dataset'])
-print('--------------------------------------------------')
+def model_permutation_importance(train_x, train_y, test_x, test_y, model_par):
+    """
+    Perform the permutation importance on input model
+    :param train_x: Pandas dataframe containing the training dataset
+    :param train_y: list containing the original labels of the input instances in the training dataset
+    :param test_x: Pandas dataframe containing the evaluation dataset
+    :param test_y: list containing the original labels of the input instances in the evaluation dataset
+    :param model_par: parameters of the model
+    :return:
+    """
+    wrapped_model = KerasClassifier(build_fn=lambda: create_model(train_x, model_par['classes'], model_par['neurons'],
+                                                                  model_par['optimizer'], model_par['init_mode'],
+                                                                  model_par['activation'], model_par['dropout_rate']),
+                                    epochs=100,
+                                    batch_size=10
+                                    )
+    wrapped_model.fit(train_x, train_y, validation_data=(test_x, to_categorical(test_y,
+                                                                                num_classes=model_par['classes']
+                                                                                )
+                                                         ))
+    results = permutation_importance(wrapped_model, train_x, train_y, scoring='accuracy')
+    return results
 
-out_list = model_creator(dataset_par, target_var=dataset_par['output_name'])
-out_list = pd.DataFrame(out_list, columns=['model_number', 'accuracy', 'val_accuracy'])
-out_list.to_csv('accuracy_' + dataset_par['dataset'] + '.csv')
+
+parameters = pd.read_csv('datasets-UCI/new_rules/summary.csv')
+parameters = parameters.iloc[0]
+print('--------------------------------------------------')
+print(parameters['dataset'])
+print('--------------------------------------------------')
+data_path = 'datasets-UCI/new_rules/'
+
+x_train, x_test, y_train, y_test, _, _, _ = dataset_uploader(parameters['dataset'], data_path,
+                                                             target_var=parameters['output_name'],
+                                                             cross_split=5, apply_smothe=False
+                                                             )
+x_train, x_test, y_train, y_test = x_train[0], x_test[0], y_train[0], y_test[0]
+columns = x_train.columns.tolist()
+perm_res = model_permutation_importance(x_train, y_train, x_test, y_test, parameters)
+# get importance
+importance = perm_res.importances_mean
+# summarize feature importance
+for i, v in enumerate(importance):
+    print(f'Feature: {columns[i]}, Score: {v}')
+# plot feature importance
+pyplot.bar([x for x in range(len(importance))], importance)
+pyplot.show()
+
+# out_list = model_creator(parameters, target_var=dataset_par['output_name'])
+# out_list = pd.DataFrame(out_list, columns=['model_number', 'accuracy', 'val_accuracy'])
+# out_list.to_csv('accuracy_' + dataset_par['dataset'] + '.csv')

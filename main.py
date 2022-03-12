@@ -45,8 +45,8 @@ for df in [0]:
     # metric_list.append(['REFNE'] + metric_refne)
 
     print('---------------------- Working on C45 PANE -----------------------')
-    metric_c45 = run_c45_pane(X_train, X_test, y_test, dataset_par, model, labels)
-    metric_list.append(['C45 PANE'] + metric_c45)
+    # metric_c45 = run_c45_pane(X_train, X_test, y_test, dataset_par, model, labels)
+    # metric_list.append(['C45 PANE'] + metric_c45)
 
     print('---------------------- Working on RxNCM -----------------------')
     # metric_rxncn = rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model, save_graph)
