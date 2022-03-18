@@ -11,6 +11,7 @@ from sklearn.inspection import permutation_importance
 from imblearn.over_sampling import SMOTE
 from common_functions import dataset_uploader
 from matplotlib import pyplot
+import copy
 
 
 def create_model(train_x, n_classes, neurons, optimizer='Adam', init_mode='glorot_uniform',
@@ -113,12 +114,85 @@ def model_permutation_importance(train_x, train_y, test_x, test_y, model_par):
                                     epochs=100,
                                     batch_size=10
                                     )
-    wrapped_model.fit(train_x, train_y, validation_data=(test_x, to_categorical(test_y,
-                                                                                num_classes=model_par['classes']
-                                                                                )
-                                                         ))
+    history = wrapped_model.fit(train_x,
+                                train_y,
+                                validation_data=(test_x, to_categorical(test_y, num_classes=model_par['classes'])
+                                                 ),
+                                verbose=0
+                                )
+    # Calculate the maximum prediction accuracy that the network can obtain on the test valuation dataset
+    accuracy = max(history.history['val_accuracy'])
     results = permutation_importance(wrapped_model, train_x, train_y, scoring='accuracy')
-    return results
+    return results, accuracy
+
+
+def importance_dictionary(in_df, importance_obj):
+    """
+    Return a dictionary where the keys are the columns of the input Pandas dataframe and the value their importance
+    scores
+    :param in_df: Pandas dataframe
+    :param importance_obj: object of the importance scores of the variables of in_df
+    :return: dictionary of the importance scores of the variables of in_df
+    """
+    importance = importance_obj.importances_mean
+    # plot feature importance
+    # pyplot.bar([x for x in range(len(importance))], importance)
+    # pyplot.show()
+    ret = {}
+    cols = in_df.columns.tolist()
+    for i, v in enumerate(importance):
+        ret[cols[i]] = round(v, 10)
+        # print(f'Feature: {columns[i]}, Score: {v}')
+    return ret
+
+
+def variable_remover(train_df, test_df, importance_scores_dict):
+    """
+    Remove the variable with the minimum importance score from the train and test dataset and the dictionary with the
+    importance scores
+    :param train_df: Pandas dataframe with the training dataset
+    :param test_df: Pandas dataframe with the evaluation dataset
+    :param importance_scores_dict: dictionary containing the importance scores
+    :return: two Pandas dataframes with the training and evaluation datasets and the dictionary with the
+    importance scores
+    """
+    min_importance_variable = min(importance_scores_dict, key=importance_scores_dict.get)
+    print("Minimum importance: ", min_importance_variable)
+    importance_scores_dict.pop(min_importance_variable, None)
+    train_df.drop(min_importance_variable, axis=1, inplace=True)
+    test_df.drop(min_importance_variable, axis=1, inplace=True)
+    return train_df, test_df, importance_scores_dict
+
+
+def variable_selector(train_df, test_df, train_y, test_y, original_accuracy, importance_scores_dict, model_par):
+    """
+    Remove the not relevant variables of the input Pandas dataframe
+    :param train_df: Pandas dataframe
+    :param test_df: Pandas dataframe
+    :param train_y: list
+    :param test_y: list
+    :param original_accuracy: prediction accuracy of the model trained on all variables
+    :param model_par:
+    :param importance_scores_dict: dictionary containing the importance scores of the input variables
+    :return: two Pandas dataframes with the training and evaluation datasets containing only the relevant variables
+    """
+    new_train_df = copy.deepcopy(train_df)
+    new_test_df = copy.deepcopy(test_df)
+    print("This is the length of the dictionary: ", len(importance_scores_dict))
+    print("This is the shape of the training dataset: ", new_train_df.shape)
+    if len(importance_scores_dict) > 0:
+        new_train_df, new_test_df, importance_scores_dict = variable_remover(new_train_df, new_test_df,
+                                                                             importance_scores_dict)
+        print(new_train_df.head())
+        _, new_accuracy = model_permutation_importance(new_train_df, train_y, new_test_df, test_y, model_par)
+        print("The original accuracy of the network is: ", original_accuracy)
+        print("The accuracy of the pruned network is: ", new_accuracy)
+        if new_accuracy >= original_accuracy:
+            train_df = new_train_df
+            test_df = new_test_df
+        variable_selector(train_df, test_df, train_y, test_y, original_accuracy, importance_scores_dict, model_par)
+    else:
+        return train_df, test_df
 
 
 parameters = pd.read_csv('datasets-UCI/new_rules/summary.csv')
@@ -130,19 +204,17 @@ data_path = 'datasets-UCI/new_rules/'
 
 x_train, x_test, y_train, y_test, _, _, _ = dataset_uploader(parameters['dataset'], data_path,
                                                              target_var=parameters['output_name'],
-                                                             cross_split=5, apply_smothe=False
+                                                             cross_split=5, apply_smothe=False,
+                                                             data_normalization=False
                                                              )
 x_train, x_test, y_train, y_test = x_train[0], x_test[0], y_train[0], y_test[0]
 columns = x_train.columns.tolist()
-perm_res = model_permutation_importance(x_train, y_train, x_test, y_test, parameters)
-# get importance
-importance = perm_res.importances_mean
-# summarize feature importance
-for i, v in enumerate(importance):
-    print(f'Feature: {columns[i]}, Score: {v}')
-# plot feature importance
-pyplot.bar([x for x in range(len(importance))], importance)
-pyplot.show()
+perm_res, network_accuracy = model_permutation_importance(x_train, y_train, x_test, y_test, parameters)
+# get minimum importance
+importance_dict = importance_dictionary(x_test, perm_res)
+x_train, x_test = variable_selector(x_train, x_test, y_train, y_test, network_accuracy, importance_dict, parameters)
+
+
 
 # out_list = model_creator(parameters, target_var=dataset_par['output_name'])
 # out_list = pd.DataFrame(out_list, columns=['model_number', 'accuracy', 'val_accuracy'])

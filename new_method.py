@@ -4,7 +4,7 @@ from keras.models import load_model
 from rxren_rxncn_functions import input_delete, model_pruned_prediction
 from common_functions import save_list, create_empty_file, attack_definer, rule_metrics_calculator
 from refne import synthetic_data_generator
-from sklearn.cluster import AgglomerativeClustering, KMeans
+from sklearn.cluster import AgglomerativeClustering, KMeans, OPTICS
 import matplotlib.pyplot as plt
 from itertools import cycle, islice
 from sklearn.metrics import accuracy_score
@@ -234,7 +234,7 @@ def elbow_method(in_df, threshold=0.05):
 
 
 def rule_extractor(original_data, original_label, in_df, label_col, minimum_acc, rule_set, linkage='ward',
-                   min_sample=100):
+                   min_sample=10):
     """
     Return the ruleset automatically extracted to mimic the logic of a machine-learned model.
     :param original_data:
@@ -252,8 +252,9 @@ def rule_extractor(original_data, original_label, in_df, label_col, minimum_acc,
         print('I am working on a group with length: ', len(group))
         if len(group) > min_sample:
             number_clusters = elbow_method(group.to_numpy())
-            clustering = AgglomerativeClustering(n_clusters=number_clusters, linkage=linkage).fit(group.to_numpy())
+            # clustering = AgglomerativeClustering(n_clusters=number_clusters, linkage=linkage).fit(group.to_numpy())
             # clustering = KMeans(n_clusters=number_clusters).fit(group.to_numpy())
+            clustering = OPTICS().fit(group.to_numpy())
             group['clusters'] = clustering.labels_
             ans = [pd.DataFrame(x) for _, x in group.groupby('clusters', as_index=False)]
             new_rules = rule_creator(ans, original_data, label_col, 'clusters')
@@ -420,7 +421,7 @@ def cluster_rule_extractor(x_train, x_test, y_train, y_test, dataset_par, save_g
     try:
         MIN_ROW = dataset_par['minimum_row']
     except:
-        MIN_ROW = 50
+        MIN_ROW = 10
 
     X_train = pd.concat([x_train, x_test], ignore_index=True)
     model = load_model('trained_models/trained_model_' + dataset_par['dataset'] + '_'

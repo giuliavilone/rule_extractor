@@ -4,7 +4,7 @@ from keras.layers import Dense, Dropout
 import numpy as np
 from scipy.stats import mode
 import pandas as pd
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import StratifiedKFold
 from imblearn.over_sampling import SMOTE
 import itertools
@@ -154,7 +154,27 @@ def column_type_finder(dataset, target_var):
     return dataset, discrete_column_names, out_disc, out_cont
 
 
-def dataset_uploader(file_name, path, target_var='class', cross_split=5, apply_smothe=True, remove_columns=True):
+def data_scaler(in_df):
+    """
+    Normalise the input dataset with the StandardScaler sklearn
+    function
+    :param in_df: input pandas Dataframe
+    :return:
+    """
+    std_scale = StandardScaler().fit(in_df)
+    x_train_norm = std_scale.transform(in_df)
+    x_train_norm = pd.DataFrame(x_train_norm, index=in_df.index, columns=in_df.columns)
+    return x_train_norm
+
+
+def dataset_uploader(file_name,
+                     path,
+                     target_var='class',
+                     cross_split=5,
+                     apply_smothe=True,
+                     remove_columns=True,
+                     data_normalization=True,
+                     ):
     """
     Upload a dataset from a csv file into a Pandas dataframe and applies, if requested, the SMOTE algorithm to
     oversample the minority class(es). The input dataset is split into a list of training and evaluation datasets with
@@ -166,6 +186,8 @@ def dataset_uploader(file_name, path, target_var='class', cross_split=5, apply_s
     :param apply_smothe: boolean variable. If true, the SMOTE oversampling algorithm is applied
     :param remove_columns: boolean variable. If true, the columns listed in the variable "feat_to_be_deleted" are
     deleted (see function data_file)
+    :param data_normalization: boolean variable. If true, input data are normalised using the StandardScaler sklearn
+    function
     :return: list of Pandas datasets containing the training and evaluations datasets, a separate list of the output
     variable of the training and evaluation datasets, list of the output class labels, list of the discrete and
     continuous variables
@@ -178,6 +200,8 @@ def dataset_uploader(file_name, path, target_var='class', cross_split=5, apply_s
     y = le.fit_transform(dataset[target_var].tolist())
     labels = list(le.fit(dataset[target_var].tolist()).classes_)
     x = dataset.drop(columns=[target_var])
+    if data_normalization:
+        x = data_scaler(x)
     # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=(1 - train_split))
     x_train_list, x_test_list, y_train_list, y_test_list = [], [], [], []
     cv = StratifiedKFold(n_splits=cross_split)
