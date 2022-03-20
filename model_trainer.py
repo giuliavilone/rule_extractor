@@ -126,18 +126,20 @@ def model_permutation_importance(train_x, train_y, test_x, test_y, model_par):
     return results, accuracy
 
 
-def importance_dictionary(in_df, importance_obj):
+def importance_dictionary(in_df, importance_obj, plot_importance_scores=False):
     """
     Return a dictionary where the keys are the columns of the input Pandas dataframe and the value their importance
     scores
     :param in_df: Pandas dataframe
     :param importance_obj: object of the importance scores of the variables of in_df
+    :param plot_importance_scores: boolean variable. If true, the function returns the barchart of the importance scores
     :return: dictionary of the importance scores of the variables of in_df
     """
     importance = importance_obj.importances_mean
     # plot feature importance
-    # pyplot.bar([x for x in range(len(importance))], importance)
-    # pyplot.show()
+    if plot_importance_scores:
+        pyplot.bar([x for x in range(len(importance))], importance)
+        pyplot.show()
     ret = {}
     cols = in_df.columns.tolist()
     for i, v in enumerate(importance):

@@ -333,7 +333,6 @@ def complete_rule(in_df, original_y, rule_list, label_col):
     if len(empty_index) > 0:
         uncovered_instances = new_df.iloc[empty_index]
         min_dist = minimum_distance(uncovered_instances, rule_list, label_col)
-        print(min_dist)
         min_dist_per_instance = find_min_position(min_dist)
         min_rules = set(min_dist_per_instance)
         for m_rule in min_rules:

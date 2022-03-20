@@ -14,7 +14,7 @@ import sys
 parameters = pd.read_csv('datasets-UCI/new_rules/summary.csv')
 # data_path = 'datasets/'
 data_path = 'datasets-UCI/new_rules/'
-save_graph = False
+save_graph = True
 
 for df in [0]:
     metric_list = []
@@ -28,7 +28,8 @@ for df in [0]:
                                                                                                   data_path,
                                                                                                   target_var=label_col,
                                                                                                   cross_split=5,
-                                                                                                  apply_smothe=False
+                                                                                                  apply_smothe=False,
+                                                                                                  data_normalization=False
                                                                                                   )
     # create_empty_file(dataset_par['dataset'] + "_labels")
     # save_list(labels, dataset_par['dataset'] + "_labels")

@@ -318,13 +318,13 @@ def rule_metrics_calculator(in_df, y_test, model_labels, final_rules, n_classes)
     return [complete, correctness, fidelity, robustness, rule_n, avg_length, overlap, class_fraction]
 
 
-def rule_merger(ruleset, cover_list):
+def rule_merger(ruleset):
+    # This function must be debugged
     """
     This function checks if there are rules with the same class and list of columns. If this is the case, these rules
     are merged together and will be treated as 'OR' logical disjunction. The cover sets of these rules are joined
     together
     :param ruleset: list of rules
-    :param cover_list: list of arrays containing the cover set of the rules of the input ruleset
     :return: modified ruleset with joint rules, updated list of the cover sets of the modified ruleset
     """
     ix1 = 0
@@ -337,14 +337,33 @@ def rule_merger(ruleset, cover_list):
                     rule_a['limits'] = [rule_a['limits']] + [rule_b['limits']]
                 else:
                     rule_a['limits'].append(rule_b['limits'])
+                ruleset[ix1]['samples'] += ruleset[ix2]['samples']
+                ruleset[ix1]['samples'][ruleset[ix1]['samples'] > 1] = 1
                 ruleset.pop(ix2)
-                cover_list[ix1]['rule_cover'] += cover_list[ix2]['rule_cover']
-                cover_list[ix1]['rule_cover'][cover_list[ix1]['rule_cover'] > 1] = 1
-                cover_list.pop(ix2)
             else:
                 ix2 += 1
         ix1 += 1
-    return ruleset, cover_list
+    return ruleset
+
+
+def attack_weight_calculator(rule_a_sample, rule_b_sample, intersection):
+    """
+    Calculated the normalised weights of a rebuttal attack (undercut attacks have weight equal to 1 by default) as such:
+    1) Calculate the number of samples supporting each rule
+    2) Calculate the cardinality of the intersection set and divide it by the number of supporting samples of each
+    attacked rule. The idea is that the strength of the attack depends on the number of samples that are responsible for
+    it in proportion to the total number of supporting samples. For example, let’s take two attacking rules, A and B,
+    where A has 3 supporting samples and B has 4 and 2 samples are in the intersection. Then, Rule A has 2 out of 3
+    samples responsible for the attack (meaning the that the attack from B has strength 0.667) whereas Rule B has 2 out
+    of 4 attacking samples (so the strength of the attack from A is 0.5)
+    :param rule_a_sample: list of supporting samples of first rule
+    :param rule_b_sample: list of supporting samples of second rule
+    :param intersection: list of sample in the intersection set between the two rules
+    :return: list of rules' weights
+    """
+    ret = {'rule_a': float(len(intersection)) / float(len(rule_a_sample)),
+           'rule_b': float(len(intersection)) / float(len(rule_b_sample))}
+    return ret
 
 
 def attack_definer(final_rules, merge_rules=False):
@@ -356,33 +375,43 @@ def attack_definer(final_rules, merge_rules=False):
     :return: list of attackers, modified ruleset with merged rules
     """
     ret = []
-    total_cover = []
     for rule_number in range(len(final_rules)):
         rule = final_rules[rule_number]
         # rule_cover = rule_elicitation(in_df, rule)
-        rule_cover = rule['samples']
-        rule_cover = {'rule_number': "R"+str(rule_number), 'rule_cover': rule_cover, 'rule_class': rule['class']}
-        total_cover.append(rule_cover)
         rule['rule_number'] = "Rule "+str(rule_number)
     if merge_rules:
-        final_rules, total_cover = rule_merger(final_rules, total_cover)
-    for pair in itertools.combinations(total_cover, 2):
+        final_rules = rule_merger(final_rules)
+    for pair in itertools.combinations(final_rules, 2):
         a, b = pair
-        if a['rule_class'] != b['rule_class']:
-            a_index = a['rule_cover']
-            b_index = b['rule_cover']
+        if a['class'] != b['class']:
+            a_index = a['samples']
+            b_index = b['samples']
             comparison_index = np.intersect1d(a_index, b_index)
-            if np.array_equal(a_index, b_index) and len(comparison_index) > 0:
-                ret.append({"source": a['rule_number'], "target": b['rule_number'], "type": "rebuttal"})
-                ret.append({"source": b['rule_number'], "target": a['rule_number'], "type": "rebuttal"})
-            else:
-                if np.array_equal(a_index, comparison_index):
-                    ret.append({"source": a['rule_number'], "target": b['rule_number'], "type": "undercut"})
-                elif np.array_equal(b_index, comparison_index):
-                    ret.append({"source": b['rule_number'], "target": a['rule_number'], "type": "undercut"})
-                elif len(comparison_index) > 0:
-                    ret.append({"source": a['rule_number'], "target": b['rule_number'], "type": "rebuttal"})
-                    ret.append({"source": b['rule_number'], "target": a['rule_number'], "type": "rebuttal"})
+            # Excluding the case the index lists are empty
+            if len(comparison_index) > 0:
+                if np.array_equal(a_index, b_index):
+                    # In this case a_index, b_index and comparison_index contain the same list of samples, so the
+                    # weights are equal to 1
+                    ret.append({"source": a['rule_number'], "target": b['rule_number'], "type": "rebuttal",
+                                "weight": 1})
+                    ret.append({"source": b['rule_number'], "target": a['rule_number'], "type": "rebuttal",
+                                "weight": 1})
+                else:
+                    # The weights of the undercut attacks is set equal to 1 as the undercutting rule always wins
+                    if np.array_equal(a_index, comparison_index):  # Rule a fully included in rule b
+                        ret.append({"source": a['rule_number'], "target": b['rule_number'], "type": "undercut",
+                                    "weight": 1})
+                    elif np.array_equal(b_index, comparison_index):  # Rule b fully included in rule a
+                        ret.append({"source": b['rule_number'], "target": a['rule_number'], "type": "undercut",
+                                    "weight": 1})
+                    else:
+                        attack_weights = attack_weight_calculator(a_index, b_index, comparison_index)
+                        if attack_weights['rule_b'] >= attack_weights['rule_a']:
+                            ret.append({"source": a['rule_number'], "target": b['rule_number'], "type": "rebuttal",
+                                        "weight": attack_weights['rule_b']})
+                        elif attack_weights['rule_a'] >= attack_weights['rule_b']:
+                            ret.append({"source": b['rule_number'], "target": a['rule_number'], "type": "rebuttal",
+                                        "weight": attack_weights['rule_a']})
     return ret, final_rules
 
 
