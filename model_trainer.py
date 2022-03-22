@@ -2,14 +2,12 @@ from keras.callbacks import ModelCheckpoint, EarlyStopping
 from keras.models import Sequential
 from keras.layers import Dense
 from keras.layers import Dropout
-from keras.utils import to_categorical
-from keras.wrappers.scikit_learn import KerasClassifier
+from keras.utils.np_utils import to_categorical
+# from keras.wrappers.scikit_learn import KerasClassifier
+from scikeras.wrappers import KerasClassifier
 import pandas as pd
-from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import StratifiedKFold
 from sklearn.inspection import permutation_importance
-from imblearn.over_sampling import SMOTE
-from common_functions import dataset_uploader
+from common_functions import dataset_uploader, relevant_column_selector, create_empty_file, save_list
 from matplotlib import pyplot
 import copy
 
@@ -47,53 +45,29 @@ def model_train(train_x, train_y, test_x, test_y, model, model_name, n_classes, 
     return model, history
 
 
-def model_creator(item, target_var='class', cross_split=5, remove_columns=True):
-    feat_to_be_deleted = {'bank': ['euribor3m', 'emp.var.rate'],
-                          'cover_type': ['Wilderness_Area1', 'Aspect', 'Hillshade_9am', 'Hor_Dist_Hydrology'],
-                          'letter_recognition': ['y-box', 'high', 'width'],
-                          'online_shoppers_intention': ['BounceRates', 'ProductRelated', 'Inform_Duration'],
-                          'avila': ['F10'],
-                          'credit_card_default': ['BILL_AMT6', 'BILL_AMT5', 'BILL_AMT4', 'BILL_AMT3', 'BILL_AMT2',
-                                                  'PAY_6', 'PAY_5', 'PAY_4', 'PAY_3', 'PAY_2'],
-                          'eeg_eye_states': ['P7', 'F8', 'T8', 'P8', 'FC5'],
-                          'skin_nonskin': ['B'],
-                          'htru': ['mean_dm_snr_curve', 'kurtosis_dm_snr_curve', 'skewness_profile', 'mean_profile'],
-                          'occupancy': ['HumidityRatio', 'Temperature'],
-                          'shuttle': ['S7', 'S8', 'S9']
-                          }
-    le = LabelEncoder()
-    dataset = pd.read_csv('datasets/' + item['dataset'] + '.csv')
-    dataset = dataset.dropna().reset_index(drop=True)
-    if remove_columns and item['dataset'] in feat_to_be_deleted.keys():
-        columns_to_be_deleted = [col for col in dataset.columns.tolist() if col in feat_to_be_deleted[item['dataset']]]
-        dataset = dataset.drop(columns=columns_to_be_deleted)
-    col_types = dataset.dtypes
-    for index, value in col_types.items():
-        if value in ['object', 'bool']:
-            if index != target_var:
-                dataset = pd.get_dummies(dataset, columns=[index])
-
-    # Separating independent variables from the target one
-    y = le.fit_transform(dataset[target_var].tolist())
-    X = dataset.drop(columns=[target_var])
-    cv = StratifiedKFold(n_splits=cross_split)
-    ix = 1
+def model_creator(item, path_to_data, relevant_variable=None, cross_split=5, remove_columns=True):
+    train_x, test_x, train_y, test_y, labels, _, _ = dataset_uploader(item['dataset'], path_to_data,
+                                                                      target_var=item['output_name'],
+                                                                      cross_split=cross_split,
+                                                                      data_normalization=False,
+                                                                      remove_columns=remove_columns
+                                                                      )
     ret = []
-    for train_idx, test_idx, in cv.split(X, y):
-        X_train, y_train = X[X.index.isin(train_idx)], y[train_idx]
-        X_train, y_train = SMOTE().fit_resample(X_train, y_train)
-        X_test, y_test = X[X.index.isin(test_idx)], y[test_idx]
-        model = create_model(X_train, item['classes'], item['neurons'], item['optimizer'], item['init_mode'],
+    for idx in range(len(train_x)):
+        train_x_idx, test_x_idx, train_y_idx, test_y_idx = train_x[0], test_x[0], train_y[0], test_y[0]
+        if relevant_variable is not None:
+            train_x_idx = relevant_column_selector(train_x_idx, relevant_variable)
+            test_x_idx = relevant_column_selector(test_x_idx, relevant_variable)
+        model = create_model(train_x_idx, item['classes'], item['neurons'], item['optimizer'], item['init_mode'],
                              item['activation'], item['dropout_rate']
                              )
-        m, h = model_train(X_train, y_train, X_test, y_test, model,
-                           'trained_model_' + item['dataset'] + '_' + str(ix) + '.h5',
+        m, h = model_train(train_x_idx, train_y_idx, test_x_idx, test_y_idx, model,
+                           'trained_model_' + item['dataset'] + '_' + str(idx) + '.h5',
                            int(item['classes']), batch_size=int(item['batch_size'])
                            )
 
         hist_index = h.history['accuracy'].index(max(h.history['accuracy']))
-        ret.append([ix, h.history['accuracy'][hist_index], h.history['val_accuracy'][hist_index]])
-        ix += 1
+        ret.append([idx, h.history['accuracy'][hist_index], h.history['val_accuracy'][hist_index]])
 
     return ret
 
@@ -111,18 +85,25 @@ def model_permutation_importance(train_x, train_y, test_x, test_y, model_par):
     wrapped_model = KerasClassifier(build_fn=lambda: create_model(train_x, model_par['classes'], model_par['neurons'],
                                                                   model_par['optimizer'], model_par['init_mode'],
                                                                   model_par['activation'], model_par['dropout_rate']),
-                                    epochs=100,
+                                    epochs=50,
                                     batch_size=10
                                     )
+    other_args = {"validation_data": (test_x, to_categorical(test_y, num_classes=model_par['classes'])),
+                  "verbose": 1
+                  }
     history = wrapped_model.fit(train_x,
-                                train_y,
-                                validation_data=(test_x, to_categorical(test_y, num_classes=model_par['classes'])
-                                                 ),
-                                verbose=0
+                                to_categorical(train_y, num_classes=model_par['classes']),
+                                **other_args
+                                # validation_data=(test_x, to_categorical(test_y, num_classes=model_par['classes'])
+                                #                 ),
+                                # verbose=1
                                 )
-    # Calculate the maximum prediction accuracy that the network can obtain on the test valuation dataset
-    accuracy = max(history.history['val_accuracy'])
-    results = permutation_importance(wrapped_model, train_x, train_y, scoring='accuracy')
+    # Calculate the maximum prediction accuracy that the network can obtain on the test valuation dataset.
+    # When the final model will be trained, the fit function will save the model with the highest prediction accuracy
+    # on the evaluation dataset.
+    accuracy = max(history.history_['val_accuracy'])
+    results = permutation_importance(wrapped_model, train_x, to_categorical(train_y, num_classes=model_par['classes']),
+                                     scoring='accuracy')
     return results, accuracy
 
 
@@ -171,10 +152,10 @@ def variable_selector(train_df, test_df, train_y, test_y, original_accuracy, imp
     Remove the not relevant variables of the input Pandas dataframe
     :param train_df: Pandas dataframe
     :param test_df: Pandas dataframe
-    :param train_y: list
-    :param test_y: list
+    :param train_y: list of the original classes of the instances in the training dataset
+    :param test_y: list of the original classes of the instances in the evaluation dataset
     :param original_accuracy: prediction accuracy of the model trained on all variables
-    :param model_par:
+    :param model_par: Pandas dataframe with the parameters of the neural network to be trained
     :param importance_scores_dict: dictionary containing the importance scores of the input variables
     :return: two Pandas dataframes with the training and evaluation datasets containing only the relevant variables
     """
@@ -182,19 +163,19 @@ def variable_selector(train_df, test_df, train_y, test_y, original_accuracy, imp
     new_test_df = copy.deepcopy(test_df)
     print("This is the length of the dictionary: ", len(importance_scores_dict))
     print("This is the shape of the training dataset: ", new_train_df.shape)
-    if len(importance_scores_dict) > 0:
+    if len(importance_scores_dict) > 0 and new_train_df.shape[1] > 2:
         new_train_df, new_test_df, importance_scores_dict = variable_remover(new_train_df, new_test_df,
                                                                              importance_scores_dict)
-        print(new_train_df.head())
+        # print(new_train_df.head())
         _, new_accuracy = model_permutation_importance(new_train_df, train_y, new_test_df, test_y, model_par)
         print("The original accuracy of the network is: ", original_accuracy)
         print("The accuracy of the pruned network is: ", new_accuracy)
         if new_accuracy >= original_accuracy:
             train_df = new_train_df
             test_df = new_test_df
-        variable_selector(train_df, test_df, train_y, test_y, original_accuracy, importance_scores_dict, model_par)
-    else:
-        return train_df, test_df
+        train_df, test_df = variable_selector(train_df, test_df, train_y, test_y, original_accuracy,
+                                              importance_scores_dict, model_par)
+    return train_df, test_df
 
 
 parameters = pd.read_csv('datasets-UCI/new_rules/summary.csv')
@@ -204,9 +185,11 @@ print(parameters['dataset'])
 print('--------------------------------------------------')
 data_path = 'datasets-UCI/new_rules/'
 
-x_train, x_test, y_train, y_test, _, _, _ = dataset_uploader(parameters['dataset'], data_path,
+x_train, x_test, y_train, y_test, _, _, _ = dataset_uploader(parameters['dataset'],
+                                                             data_path,
                                                              target_var=parameters['output_name'],
-                                                             cross_split=5, apply_smothe=False,
+                                                             cross_split=5,
+                                                             apply_smote=False,
                                                              data_normalization=False
                                                              )
 x_train, x_test, y_train, y_test = x_train[0], x_test[0], y_train[0], y_test[0]
@@ -214,10 +197,14 @@ columns = x_train.columns.tolist()
 perm_res, network_accuracy = model_permutation_importance(x_train, y_train, x_test, y_test, parameters)
 # get minimum importance
 importance_dict = importance_dictionary(x_test, perm_res)
-x_train, x_test = variable_selector(x_train, x_test, y_train, y_test, network_accuracy, importance_dict, parameters)
+# ---------------- get stuck here! ----------------------------
+df_train, df_test = variable_selector(x_train, x_test, y_train, y_test, network_accuracy, importance_dict, parameters)
+relevant_columns = df_train.columns.tolist()
+print(relevant_columns)
+create_empty_file(parameters['dataset'] + '_relevant_columns')
+save_list(relevant_columns, parameters['dataset'] + '_relevant_columns')
 
 
-
-# out_list = model_creator(parameters, target_var=dataset_par['output_name'])
-# out_list = pd.DataFrame(out_list, columns=['model_number', 'accuracy', 'val_accuracy'])
-# out_list.to_csv('accuracy_' + dataset_par['dataset'] + '.csv')
+out_list = model_creator(parameters, data_path, relevant_variable=relevant_columns)
+out_list = pd.DataFrame(out_list, columns=['model_number', 'accuracy', 'val_accuracy'])
+out_list.to_csv('accuracy_' + parameters['dataset'] + '.csv')

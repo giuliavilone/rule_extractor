@@ -3,8 +3,9 @@ import numpy as np
 from keras.models import load_model
 from rxren_rxncn_functions import input_delete, model_pruned_prediction
 from common_functions import save_list, create_empty_file, attack_definer, rule_metrics_calculator
-from refne import synthetic_data_generator
-from sklearn.cluster import AgglomerativeClustering, KMeans, OPTICS
+# from refne import synthetic_data_generator
+# from sklearn.cluster import AgglomerativeClustering,
+from sklearn.cluster import KMeans, OPTICS
 import matplotlib.pyplot as plt
 from itertools import cycle, islice
 from sklearn.metrics import accuracy_score
@@ -250,27 +251,25 @@ def rule_extractor(original_data, original_label, in_df, label_col, minimum_acc,
     groups = in_df.groupby(label_col, as_index=False)
     for key, group in groups:
         print('I am working on a group with length: ', len(group))
-        if len(group) > min_sample:
-            number_clusters = elbow_method(group.to_numpy())
+        if len(group) > min_sample * 2:  # To allow the OPTICS to have enough samples to create at least 2 clusters
+            # number_clusters = elbow_method(group.to_numpy())
             # clustering = AgglomerativeClustering(n_clusters=number_clusters, linkage=linkage).fit(group.to_numpy())
-            # clustering = KMeans(n_clusters=number_clusters).fit(group.to_numpy())
-            clustering = OPTICS().fit(group.to_numpy())
+            # xi is set equal to 0 ti minimize the number of outliers
+            # Create an iterative function to apply OPTICS until there are just a few samples considered as outliers
+            clustering = OPTICS(min_samples=min_sample, xi=0).fit(group.to_numpy())
             group['clusters'] = clustering.labels_
+            not_clustered = group[group['clusters'] == -1]
+            not_clustered.drop('clusters', axis=1, inplace=True)
+            clustering2 = OPTICS(min_samples=min_sample, xi=0).fit(not_clustered.to_numpy())
             ans = [pd.DataFrame(x) for _, x in group.groupby('clusters', as_index=False)]
             new_rules = rule_creator(ans, original_data, label_col, 'clusters')
+            # Removing the antecedents that have limits spanning the entire range of values
+            new_rules = antecedent_pruning(new_rules, original_data)
             new_ruleset_accuracy, _, _ = rule_set_evaluator(original_label, new_rules, rule_area_only=True)
             print("New ruleset accuracy: ", new_ruleset_accuracy)
             if new_ruleset_accuracy > minimum_acc:
-                best_acc = new_ruleset_accuracy
-                best_rule = []
-                for r in range(1, number_clusters+1):
-                    combos = combinations(new_rules, r)
-                    for combo in combos:
-                        combo = list(combo)
-                        combo_accuracy, _, _ = rule_set_evaluator(original_label, combo, rule_area_only=True)
-                        if combo_accuracy >= best_acc:
-                            best_rule = combo
-                rule_set = rule_set + best_rule
+                new_rules = rule_pruning(new_rules, new_ruleset_accuracy, original_label)
+                rule_set = rule_set + new_rules
             else:
                 for rule in new_rules:
                     rule_acc, _, _ = rule_set_evaluator(original_label, [rule], rule_area_only=True)

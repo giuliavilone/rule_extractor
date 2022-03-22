@@ -1,6 +1,7 @@
-from keras.optimizers import SGD, Adagrad, Adam, Nadam
+# from keras.optimizers import SGD, Adagrad, Adam, Nadam
 import numpy as np
-from common_functions import perturbator, rule_metrics_calculator, rule_write
+from common_functions import perturbator, rule_write
+# from common_functions import rule_metrics_calculator
 from trepan import Tree, Oracle
 from sklearn.metrics import accuracy_score
 

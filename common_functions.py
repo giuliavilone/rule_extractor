@@ -167,11 +167,24 @@ def data_scaler(in_df):
     return x_train_norm
 
 
+def relevant_column_selector(in_df, relevant_column_list):
+    """
+    Remove from the input Pandas dataframe the columns that are not included in the list of the relevant ones
+    :param in_df: Pandas dataframe
+    :param relevant_column_list: list of relevant columns
+    :return: the input Pandas dataframe containing only the relevant columns
+    """
+    for col in in_df.columns.tolist():
+        if col not in relevant_column_list:
+            in_df.drop(col, axis=1, inplace=True)
+    return in_df
+
+
 def dataset_uploader(file_name,
                      path,
                      target_var='class',
                      cross_split=5,
-                     apply_smothe=True,
+                     apply_smote=True,
                      remove_columns=True,
                      data_normalization=True,
                      ):
@@ -183,7 +196,7 @@ def dataset_uploader(file_name,
     :param path: path to the csv file to be uploaded
     :param target_var: name of the dependent variable (to be predicted by a model)
     :param cross_split: number of folds for the Stratified K Fold algorithm
-    :param apply_smothe: boolean variable. If true, the SMOTE oversampling algorithm is applied
+    :param apply_smote: boolean variable. If true, the SMOTE oversampling algorithm is applied
     :param remove_columns: boolean variable. If true, the columns listed in the variable "feat_to_be_deleted" are
     deleted (see function data_file)
     :param data_normalization: boolean variable. If true, input data are normalised using the StandardScaler sklearn
@@ -207,8 +220,8 @@ def dataset_uploader(file_name,
     cv = StratifiedKFold(n_splits=cross_split)
     for train_idx, test_idx, in cv.split(x, y):
         x_train, y_train = x[x.index.isin(train_idx)], y[train_idx]
-        if apply_smothe:
-            x_train, y_train = SMOTE().fit_sample(x_train, y_train)
+        if apply_smote:
+            x_train, y_train = SMOTE().fit_resample(x_train, y_train)
         x_test, y_test = x[x.index.isin(test_idx)], y[test_idx]
         x_train_list.append(x_train)
         x_test_list.append(x_test)

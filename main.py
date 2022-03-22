@@ -28,7 +28,7 @@ for df in [0]:
                                                                                                   data_path,
                                                                                                   target_var=label_col,
                                                                                                   cross_split=5,
-                                                                                                  apply_smothe=False,
+                                                                                                  apply_smote=False,
                                                                                                   data_normalization=False
                                                                                                   )
     # create_empty_file(dataset_par['dataset'] + "_labels")

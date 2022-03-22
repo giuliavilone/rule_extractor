@@ -1,10 +1,11 @@
 import pandas as pd
-from keras.utils import to_categorical
+from keras.utils.np_utils import to_categorical
 from keras.models import load_model
-from keras.optimizers import SGD, Adagrad, Adam, Nadam
+# from keras.optimizers import SGD, Adagrad, Adam, Nadam
 import numpy as np
 from sklearn.metrics import accuracy_score
-from sklearn.tree import DecisionTreeClassifier, export_text, export_graphviz, plot_tree
+# from sklearn.tree import export_text, export_graphviz, plot_tree
+from sklearn.tree import DecisionTreeClassifier
 from common_functions import perturbator, create_model, model_train, ensemble_predictions, rule_write
 
 
