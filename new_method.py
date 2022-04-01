@@ -12,11 +12,10 @@ from sklearn.metrics import accuracy_score
 import copy
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
-from itertools import combinations
 from dataset_split import number_split_finder, dataset_splitter_new  # dataset_splitter,
 
 
-# These are to remove some of the tensorflow warnings. The code works in any case
+# These are to remove some tensorflow warnings. The code works in any case
 # import os
 # os.environ['TF_XLA_FLAGS'] = '--tf_xla_enable_xla_devices'
 # os.environ['CUDA_VISIBLE_DEVICES'] = "1"
@@ -160,11 +159,10 @@ def rule_creator(in_df_list, original_x, label_col, *args):
 
 def rule_elicitation(x, in_rule):
     """
-    Calculate the accuracy score of the input rule and the indexes of the instances that fire the input rule. The
-    accuracy score is calculated over the instances that are affected by the rule.
+    Return the list of the indexes of the sample that fire that input rule.
     :param x: dataframe containing the independent variables of the input instances
-    :param in_rule: rule to be evaluated
-    :return: the accuracy score of the rule and the indexes of the instances that fire the rule
+    :param in_rule: rule to be elicited
+    :return: set of samples that fire the input rule
     """
     indexes = []
     for item in range(len(in_rule['columns'])):
@@ -234,8 +232,30 @@ def elbow_method(in_df, threshold=0.05):
     return n_clusters
 
 
-def rule_extractor(original_data, original_label, in_df, label_col, minimum_acc, rule_set, linkage='ward',
-                   min_sample=10):
+def iterative_clustering(data, index_list, min_sample, xi_value, min_cluster_number):
+    """
+    Applied the OPTICS clustering algorithm iteratively until just a few samples are considered as outliers and not
+    placed in any cluster (meaning that their label is -1).
+    :return:
+    """
+    clustering = OPTICS(min_samples=min_sample, xi=xi_value).fit(data.loc[index_list].to_numpy())
+    # Increasing the labels of the clusters in case the OPTICS algorithm was already applied and some data are
+    # already assigned to clusters
+    new_clusters = [i + min_cluster_number if i != -1 else i for i in clustering.labels_.tolist()]
+    data.loc[index_list, ['clusters']] = new_clusters
+    unique_labels, labels_frequency = np.unique(new_clusters, return_counts=True)
+    # Retrieving the index of the -1 element (if it exists)
+    idx = np.where(unique_labels == -1)[0]
+    # If the label -1 exists, check that its frequency is greater than min_sample * 2. If this is the case, the
+    # OPTICS algorithm can be applied again
+    if len(idx) > 0 and labels_frequency[idx[0]] >= min_sample * 2:
+        min_new_label = np.max(unique_labels) + 1
+        new_index_list = data[data['clusters'] == -1].index.tolist()
+        data = iterative_clustering(data, new_index_list, min_sample, xi_value, min_new_label)
+    return data
+
+
+def rule_extractor(original_data, original_label, in_df, label_col, minimum_acc, rule_set, min_sample=10):
     """
     Return the ruleset automatically extracted to mimic the logic of a machine-learned model.
     :param original_data:
@@ -244,46 +264,49 @@ def rule_extractor(original_data, original_label, in_df, label_col, minimum_acc,
     :param label_col:
     :param minimum_acc:
     :param rule_set:
-    :param linkage:
     :param min_sample:
     :return: a list of dictionaries where each dictionary is a rule
     """
+    best_accuracy = minimum_acc
     groups = in_df.groupby(label_col, as_index=False)
     for key, group in groups:
         print('I am working on a group with length: ', len(group))
         if len(group) > min_sample * 2:  # To allow the OPTICS to have enough samples to create at least 2 clusters
-            # number_clusters = elbow_method(group.to_numpy())
-            # clustering = AgglomerativeClustering(n_clusters=number_clusters, linkage=linkage).fit(group.to_numpy())
-            # xi is set equal to 0 ti minimize the number of outliers
-            # Create an iterative function to apply OPTICS until there are just a few samples considered as outliers
-            clustering = OPTICS(min_samples=min_sample, xi=0).fit(group.to_numpy())
-            group['clusters'] = clustering.labels_
-            not_clustered = group[group['clusters'] == -1]
-            not_clustered.drop('clusters', axis=1, inplace=True)
-            clustering2 = OPTICS(min_samples=min_sample, xi=0).fit(not_clustered.to_numpy())
+            # The OPTICS parameter xi is set equal to 0 to minimize the number of outliers
+            group['clusters'] = -2
+            group = iterative_clustering(group, group.index.tolist(), min_sample, 0, 0)
+            # Removing outliers (instances with cluster label = -1). They might be covered by other rules or dealt with
+            # at the end when the ruleset will be completed
+            group = group[group['clusters'] != -1]
             ans = [pd.DataFrame(x) for _, x in group.groupby('clusters', as_index=False)]
             new_rules = rule_creator(ans, original_data, label_col, 'clusters')
             # Removing the antecedents that have limits spanning the entire range of values
             new_rules = antecedent_pruning(new_rules, original_data)
-            new_ruleset_accuracy, _, _ = rule_set_evaluator(original_label, new_rules, rule_area_only=True)
-            print("New ruleset accuracy: ", new_ruleset_accuracy)
-            if new_ruleset_accuracy > minimum_acc:
-                new_rules = rule_pruning(new_rules, new_ruleset_accuracy, original_label)
+            # Removing the rules that do not improve the accuracy
+            new_rules_accuracy, _, _ = rule_set_evaluator(original_label, new_rules, rule_area_only=True)
+            new_rules = rule_pruning(new_rules, new_rules_accuracy, original_label)
+            # Calculating the accuracy of the entire ruleset that includes also the new rules
+            new_ruleset_accuracy, _, _ = rule_set_evaluator(original_label, rule_set + new_rules, rule_area_only=True)
+            print("New ruleset accuracy: ", new_rules_accuracy)
+            if new_ruleset_accuracy > best_accuracy:
                 rule_set = rule_set + new_rules
+                best_accuracy = new_ruleset_accuracy
             else:
                 for rule in new_rules:
-                    rule_acc, _, _ = rule_set_evaluator(original_label, [rule], rule_area_only=True)
-                    if rule_acc < minimum_acc:
+                    rule_acc, _, _ = rule_set_evaluator(original_label, rule_set + [rule], rule_area_only=True)
+                    if rule_acc < best_accuracy:
                         rule_indexes = rule_elicitation(in_df, rule)
                         new_x = in_df[in_df.index.isin(rule_indexes)]
                         rule_set = rule_extractor(original_data, original_label, new_x, label_col, minimum_acc,
                                                   rule_set)
                     else:
                         rule_set.append(rule)
+                        best_accuracy = rule_acc
         else:
             group = group.drop(label_col, axis=1)
             rule = rule_assembler(group, original_data, key)
-            rule_set.append(rule)
+            rule = antecedent_pruning([rule], original_data)
+            rule_set = rule_set + rule
     return rule_set
 
 
