@@ -1,9 +1,9 @@
 import pandas as pd
 import numpy as np
 from keras.models import load_model
-from rxren_rxncn_functions import input_delete, model_pruned_prediction
+from rxren_rxncn_functions import model_pruned_prediction
 from common_functions import save_list, create_empty_file, attack_definer, rule_metrics_calculator
-# from refne import synthetic_data_generator
+from refne import synthetic_data_generator
 # from sklearn.cluster import AgglomerativeClustering,
 from sklearn.cluster import KMeans, OPTICS
 import matplotlib.pyplot as plt
@@ -13,7 +13,6 @@ import copy
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from dataset_split import number_split_finder, dataset_splitter_new  # dataset_splitter,
-
 
 # These are to remove some tensorflow warnings. The code works in any case
 # import os
@@ -33,7 +32,7 @@ def nan_replacer(in_array, n_classes):
 def prediction_classifier(orig_y, predict_y, comparison="misclassified"):
     """
     Return the dictionary containing, for each output class, the list of the indexes of the instances that are
-    wrongly or correctly classified, depending on the comparison type.
+    wrongly or correctly classified, depending on the comparison type
     :param orig_y: list/array of the original labels
     :param predict_y: list/array of the labels predicted by a model
     :param comparison: type of comparison. The default is misclassified, meaning that the function will return the
@@ -50,56 +49,6 @@ def prediction_classifier(orig_y, predict_y, comparison="misclassified"):
         else:
             ret[cls] = [i for i in range(len(orig_y)) if predict_y[i] == orig_y[i] and orig_y[i] == cls]
     return ret
-
-
-def network_pruning(w, correct_x, correct_y, in_item=None):
-    """
-    Remove the insignificant input neurons of the input model, based on the weight w.
-    :param w: model's weights
-    :param correct_x: set of correctly classified instances (independent variables)
-    :param correct_y: set of correctly classified instances (dependent variable)
-    :param in_item: in_item
-    :return: miss-classified instances, pruned weights, accuracy of pruned model,
-    """
-    temp_w = copy.deepcopy(w)
-    temp_x = copy.deepcopy(correct_x.to_numpy())
-    significant_cols = correct_x.columns.tolist()
-    pruning = True
-    while pruning:
-        error_list = []
-        miss_classified_dict = {}
-        for i in range(temp_w[0].shape[0]):
-            res = model_pruned_prediction(i, temp_x, in_item, in_weight=temp_w)
-            misclassified = prediction_classifier(correct_y, res)
-            miss_classified_dict[significant_cols[i]] = misclassified
-            error_list.append(sum([len(value) for key, value in misclassified.items()]))
-        # In case the pruned network correctly predicts all the test inputs, the original network can be pruned
-        # and its accuracy must be set equal to the accuracy of the original network
-        if min(error_list) == 0:
-            insignificant_cols_tmp = [i for i, e in enumerate(error_list) if e == 0]
-            significant_cols = [significant_cols[i] for i in range(len(significant_cols)) if i not in insignificant_cols_tmp]
-            temp_x, temp_w = input_delete(insignificant_cols_tmp, temp_x, in_weight=temp_w)
-        else:
-            pruning = False
-    return significant_cols
-
-
-def remove_column(df, column_tbm, in_weight=None):
-    """
-    Remove the columns not listed in column_tbm from the input dataframe and, if not none, from the model's weights
-    :param df: input pandas dataframe
-    :param column_tbm: list of columns to be maintained in the dataframe
-    :param in_weight: array of model's weights
-    :param column_tbm: list of columns to be maintained in the input dataframe and the array of weights
-    :return: the input dataframe (df) devoided of the columns to be deleted
-    """
-    all_cols = df.columns.tolist()
-    columns_tbd = [all_cols[i] for i, col in enumerate(all_cols) if col not in column_tbm]
-    df = df.drop(columns_tbd, axis=1)
-    if in_weight is not None:
-        weight_tdb = [i for i, col in enumerate(all_cols) if col not in column_tbm]
-        in_weight[0] = np.delete(in_weight[0], weight_tdb, 0)
-    return df, in_weight
 
 
 def cluster_plots(in_df, clusters, label_col):
@@ -120,7 +69,7 @@ def rule_assembler(df, original_x, conclusion):
     """
     Given the input dataframe with the data to be used to create the rule and the rule's conclusion,
     the function generates the rule's dictionary and assigns the indexes of the samples (in the original dataset)
-    that are covered by the new rule.
+    that are covered by the new rule
     :param df: pandas dataframe containing the data that will be covered by the new rule
     :param original_x: pandas dataframe containing the entire dataset (either training, valuation or both)
     :param conclusion: the name of the output class that must be assigned to the rule's conclusion
@@ -159,7 +108,7 @@ def rule_creator(in_df_list, original_x, label_col, *args):
 
 def rule_elicitation(x, in_rule):
     """
-    Return the list of the indexes of the sample that fire that input rule.
+    Return the list of the indexes of the sample that fire that input rule
     :param x: dataframe containing the independent variables of the input instances
     :param in_rule: rule to be elicited
     :return: set of samples that fire the input rule
@@ -226,7 +175,7 @@ def elbow_method(in_df, threshold=0.05):
         n_clusters += 1
         new_distance = KMeans(n_clusters=n_clusters).fit(in_df)
         distances.append(new_distance.inertia_)
-        perc_distance = round((distances[-2]-distances[-1])/distances[0], 2)
+        perc_distance = round((distances[-2] - distances[-1]) / distances[0], 2)
         if perc_distance <= threshold:
             adding_another_cluster = False
     return n_clusters
@@ -270,7 +219,6 @@ def rule_extractor(original_data, original_label, in_df, label_col, minimum_acc,
     best_accuracy = minimum_acc
     groups = in_df.groupby(label_col, as_index=False)
     for key, group in groups:
-        print('I am working on a group with length: ', len(group))
         if len(group) > min_sample * 2:  # To allow the OPTICS to have enough samples to create at least 2 clusters
             # The OPTICS parameter xi is set equal to 0 to minimize the number of outliers
             group['clusters'] = -2
@@ -302,11 +250,11 @@ def rule_extractor(original_data, original_label, in_df, label_col, minimum_acc,
                     else:
                         rule_set.append(rule)
                         best_accuracy = rule_acc
-        else:
-            group = group.drop(label_col, axis=1)
-            rule = rule_assembler(group, original_data, key)
-            rule = antecedent_pruning([rule], original_data)
-            rule_set = rule_set + rule
+        # else:
+        #    group = group.drop(label_col, axis=1)
+        #    rule = rule_assembler(group, original_data, key)
+        #    rule = antecedent_pruning([rule], original_data)
+        #    rule_set = rule_set + rule
     return rule_set
 
 
@@ -385,22 +333,24 @@ def rule_pruning(rule_set, original_accuracy, original_y):
 
 
 def ruleset_definer(original_x, predicted_y, dataset_par, weights, out_column, minimum_acc, max_row, min_row,
-                    split_x=None, split_y=None):
+                    disc_var, cont_var, add_synthetic_data=False, split_x=None, split_y=None):
     if split_x is None:
-        #xSynth = synthetic_data_generator(original_x,
-        #                                  min(original_x.shape[0] * 2, max_row-max(np.bincount(predicted_y)))
-        #                                  )
-        #y = model_pruned_prediction([], xSynth, dataset_par, in_weight=weights)
-        # X = xSynth.append(original_x, ignore_index=True)
-        X = original_x
-        # predicted_y = np.append(predicted_y, y)
-        X[out_column] = predicted_y
+        if add_synthetic_data:
+            x_synth = synthetic_data_generator(original_x,
+                                               min(original_x.shape[0] * 2, max_row - max(np.bincount(predicted_y))),
+                                               cont_var, disc_var
+                                               )
+            y = model_pruned_prediction([], x_synth, dataset_par, in_weight=weights)
+            x = x_synth.append(original_x, ignore_index=True)
+            predicted_y = np.append(predicted_y, y)
+        else:
+            x = original_x
+        x[out_column] = predicted_y
     else:
-        # xSynth = synthetic_data_generator(split_x, min(split_x.shape[0] * 2, max_row - split_x.shape[0]))
-        X = split_x
-        X[out_column] = split_y
+        x = split_x
+        x[out_column] = split_y
 
-    rules = rule_extractor(original_x, predicted_y, X, out_column, minimum_acc, [], min_sample=min_row)
+    rules = rule_extractor(original_x, predicted_y, x, out_column, minimum_acc, [], min_sample=min_row)
     rule_accuracy, _, _ = rule_set_evaluator(predicted_y, rules)
     final_rules = rule_pruning(rules, rule_accuracy, predicted_y)
     return final_rules
@@ -434,58 +384,54 @@ def antecedent_pruning(ruleset, original_x):
     return ruleset
 
 
-def cluster_rule_extractor(x_train, x_test, y_train, y_test, dataset_par, save_graph):
-    MINIMUM_ACC = 0.8
-    MAX_ROW = 25000
-    LABEL_COL = dataset_par['output_name']
+def cluster_rule_extractor(x_train, x_test, y_train, y_test, dataset_par, save_graph, disc_attributes, cont_attributes):
+    minimum_acc = 0.8
+    max_row = 25000
+    label_col = dataset_par['output_name']
     n_class = dataset_par['classes']
     try:
-        MIN_ROW = dataset_par['minimum_row']
-    except:
-        MIN_ROW = 10
+        min_row = dataset_par['minimum_row']
+    except Exception as ex:
+        print(ex)
+        min_row = 10
 
-    X_train = pd.concat([x_train, x_test], ignore_index=True)
+    x_train = pd.concat([x_train, x_test], ignore_index=True)
     model = load_model('trained_models/trained_model_' + dataset_par['dataset'] + '_'
                        + str(dataset_par['best_model']) + '.h5'
                        )
 
-    results = np.argmax(model.predict(X_train), axis=1)
+    results = np.argmax(model.predict(x_train), axis=1)
     weights = np.array(model.get_weights())
-    significant_features = network_pruning(weights, X_train, results, in_item=dataset_par)
-
-    X_train, weights = remove_column(X_train, significant_features, in_weight=weights)
-    X_test, _ = remove_column(x_test, significant_features)
-    results = model_pruned_prediction([], X_train, dataset_par, in_weight=weights)
-    print("Model pruned")
 
     # The idea is to split the dataset only if the occurrence of one class exceeds the max number of rows allowed.
-    if max(np.bincount(results)) >= MAX_ROW:
+    if max(np.bincount(results)) >= max_row:
         overall_rules = []
-        n_splits = number_split_finder(results, MAX_ROW)
+        n_splits = number_split_finder(results, max_row)
         print('number of splits per class: ', n_splits)
         print("Splitting the dataset")
-        # splits, split_labels = dataset_splitter(X_train, results, n_splits, n_class, distance_name='euclidean')
-        splits, split_labels = dataset_splitter_new(X_train, results, n_splits)
+        # splits, split_labels = dataset_splitter(x_train, results, n_splits, n_class, distance_name='euclidean')
+        splits, split_labels = dataset_splitter_new(x_train, results, n_splits)
         for i in range(len(splits)):
             print("----------------- Working on a split ---------------------")
-            split_X = pd.DataFrame(splits[i], columns=X_train.columns.tolist())
-            split_rules = ruleset_definer(X_train, results, dataset_par, weights, LABEL_COL, MINIMUM_ACC,
-                                          MAX_ROW, MIN_ROW, split_x=split_X, split_y=split_labels[i])
+            split_x = pd.DataFrame(splits[i], columns=x_train.columns.tolist())
+            split_rules = ruleset_definer(x_train, results, dataset_par, weights, label_col, minimum_acc,
+                                          max_row, min_row, disc_attributes, cont_attributes,
+                                          split_x=split_x, split_y=split_labels[i])
             overall_rules += split_rules
         rule_accuracy, _, _ = rule_set_evaluator(results, overall_rules)
         overall_rules = rule_pruning(overall_rules, rule_accuracy, results)
     else:
-        overall_rules = ruleset_definer(X_train, results, dataset_par, weights, LABEL_COL, MINIMUM_ACC, MAX_ROW,
-                                        MIN_ROW)
+        overall_rules = ruleset_definer(x_train, results, dataset_par, weights, label_col, minimum_acc, max_row,
+                                        min_row, disc_attributes, cont_attributes)
 
-    final_rules = complete_rule(X_train, results, overall_rules, LABEL_COL)
+    final_rules = complete_rule(x_train, results, overall_rules, label_col)
     rule_accuracy, rule_prediction, _ = rule_set_evaluator(results, final_rules)
-    final_rules = antecedent_pruning(final_rules, X_train)
+    final_rules = antecedent_pruning(final_rules, x_train)
     # print(final_rules)
-    # cluster_plots(X, y, LABEL_COL)
-    # cluster_plots(X, rule_prediction.round().astype(int), LABEL_COL)
+    # cluster_plots(X, y, label_col)
+    # cluster_plots(X, rule_prediction.round().astype(int), label_col)
 
-    metrics = rule_metrics_calculator(X_train, np.concatenate([y_train, y_test], axis=0), results, final_rules, n_class)
+    metrics = rule_metrics_calculator(x_train, np.concatenate([y_train, y_test], axis=0), results, final_rules, n_class)
     if save_graph:
         attack_list, final_rules = attack_definer(final_rules)
         create_empty_file('NEW_METHOD_' + dataset_par['dataset'] + "_attack_list")

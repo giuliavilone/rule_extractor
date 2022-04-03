@@ -56,8 +56,8 @@ def model_creator(item, path_to_data, relevant_variable=None, cross_split=5, rem
     for idx in range(len(train_x)):
         train_x_idx, test_x_idx, train_y_idx, test_y_idx = train_x[0], test_x[0], train_y[0], test_y[0]
         if relevant_variable is not None:
-            train_x_idx = relevant_column_selector(train_x_idx, relevant_variable)
-            test_x_idx = relevant_column_selector(test_x_idx, relevant_variable)
+            train_x_idx, _ = relevant_column_selector(train_x_idx, relevant_variable)
+            test_x_idx, _ = relevant_column_selector(test_x_idx, relevant_variable)
         model = create_model(train_x_idx, item['classes'], item['neurons'], item['optimizer'], item['init_mode'],
                              item['activation'], item['dropout_rate']
                              )
@@ -72,7 +72,7 @@ def model_creator(item, path_to_data, relevant_variable=None, cross_split=5, rem
     return ret
 
 
-def model_permutation_importance(train_x, train_y, test_x, test_y, model_par):
+def model_permutation_importance(train_x, train_y, test_x, test_y, model_par, epochs=50, batch_size=1000):
     """
     Perform the permutation importance on input model
     :param train_x: Pandas dataframe containing the training dataset
@@ -80,13 +80,15 @@ def model_permutation_importance(train_x, train_y, test_x, test_y, model_par):
     :param test_x: Pandas dataframe containing the evaluation dataset
     :param test_y: list containing the original labels of the input instances in the evaluation dataset
     :param model_par: parameters of the model
+    :param epochs: number of epochs for training the model
+    :param batch_size: number of samples processed before the model is updated
     :return:
     """
     wrapped_model = KerasClassifier(build_fn=lambda: create_model(train_x, model_par['classes'], model_par['neurons'],
                                                                   model_par['optimizer'], model_par['init_mode'],
                                                                   model_par['activation'], model_par['dropout_rate']),
-                                    epochs=50,
-                                    batch_size=10
+                                    epochs=epochs,
+                                    batch_size=batch_size
                                     )
     other_args = {"validation_data": (test_x, to_categorical(test_y, num_classes=model_par['classes'])),
                   "verbose": 1
@@ -94,9 +96,6 @@ def model_permutation_importance(train_x, train_y, test_x, test_y, model_par):
     history = wrapped_model.fit(train_x,
                                 to_categorical(train_y, num_classes=model_par['classes']),
                                 **other_args
-                                # validation_data=(test_x, to_categorical(test_y, num_classes=model_par['classes'])
-                                #                 ),
-                                # verbose=1
                                 )
     # Calculate the maximum prediction accuracy that the network can obtain on the test valuation dataset.
     # When the final model will be trained, the fit function will save the model with the highest prediction accuracy
@@ -147,7 +146,8 @@ def variable_remover(train_df, test_df, importance_scores_dict):
     return train_df, test_df, importance_scores_dict
 
 
-def variable_selector(train_df, test_df, train_y, test_y, original_accuracy, importance_scores_dict, model_par):
+def variable_selector(train_df, test_df, train_y, test_y, original_accuracy, importance_scores_dict, model_par,
+                      reduction_threshold=0.99):
     """
     Remove the not relevant variables of the input Pandas dataframe
     :param train_df: Pandas dataframe
@@ -157,6 +157,8 @@ def variable_selector(train_df, test_df, train_y, test_y, original_accuracy, imp
     :param original_accuracy: prediction accuracy of the model trained on all variables
     :param model_par: Pandas dataframe with the parameters of the neural network to be trained
     :param importance_scores_dict: dictionary containing the importance scores of the input variables
+    :param reduction_threshold: percentage in the reduction of the original accuracy that can be tolerated to remove one
+                                variable
     :return: two Pandas dataframes with the training and evaluation datasets containing only the relevant variables
     """
     new_train_df = copy.deepcopy(train_df)
@@ -169,8 +171,10 @@ def variable_selector(train_df, test_df, train_y, test_y, original_accuracy, imp
         # print(new_train_df.head())
         _, new_accuracy = model_permutation_importance(new_train_df, train_y, new_test_df, test_y, model_par)
         print("The original accuracy of the network is: ", original_accuracy)
+        print("The original accuracy reduced by ", reduction_threshold * 100, "% is: ",
+              original_accuracy * reduction_threshold)
         print("The accuracy of the pruned network is: ", new_accuracy)
-        if new_accuracy >= original_accuracy:
+        if new_accuracy >= original_accuracy * reduction_threshold:
             train_df = new_train_df
             test_df = new_test_df
         train_df, test_df = variable_selector(train_df, test_df, train_y, test_y, original_accuracy,
@@ -185,21 +189,28 @@ print(parameters['dataset'])
 print('--------------------------------------------------')
 data_path = 'datasets-UCI/new_rules/'
 
-x_train, x_test, y_train, y_test, _, _, _ = dataset_uploader(parameters['dataset'],
-                                                             data_path,
-                                                             target_var=parameters['output_name'],
-                                                             cross_split=5,
-                                                             apply_smote=False,
-                                                             data_normalization=False
-                                                             )
-x_train, x_test, y_train, y_test = x_train[0], x_test[0], y_train[0], y_test[0]
-columns = x_train.columns.tolist()
-perm_res, network_accuracy = model_permutation_importance(x_train, y_train, x_test, y_test, parameters)
-# get minimum importance
-importance_dict = importance_dictionary(x_test, perm_res)
-# ---------------- get stuck here! ----------------------------
-df_train, df_test = variable_selector(x_train, x_test, y_train, y_test, network_accuracy, importance_dict, parameters)
-relevant_columns = df_train.columns.tolist()
+x_train_list, x_test_list, y_train_list, y_test_list, _, _, _ = dataset_uploader(parameters['dataset'],
+                                                                                 data_path,
+                                                                                 target_var=parameters['output_name'],
+                                                                                 cross_split=5,
+                                                                                 apply_smote=False,
+                                                                                 data_normalization=False
+                                                                                 )
+best_accuracy = 0
+relevant_columns = []
+for ix in range(len(x_train_list)):
+    x_train, x_test, y_train, y_test = x_train_list[ix], x_test_list[ix], y_train_list[ix], y_test_list[ix]
+    columns = x_train.columns.tolist()
+    perm_res, network_accuracy = model_permutation_importance(x_train, y_train, x_test, y_test, parameters)
+    print("The best accuracy reached is: ", network_accuracy)
+    if network_accuracy > best_accuracy:
+        best_accuracy = network_accuracy
+        # get minimum importance
+        importance_dict = importance_dictionary(x_test, perm_res)
+        df_train, df_test = variable_selector(x_train, x_test, y_train, y_test, network_accuracy, importance_dict,
+                                              parameters)
+        relevant_columns = df_train.columns.tolist()
+
 print(relevant_columns)
 create_empty_file(parameters['dataset'] + '_relevant_columns')
 save_list(relevant_columns, parameters['dataset'] + '_relevant_columns')

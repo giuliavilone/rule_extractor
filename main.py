@@ -62,7 +62,8 @@ for df in [0]:
     # metric_list.append(['TREPAN'] + metric_trepan)
 
     print('---------------------- Working on NEW METHOD -----------------------')
-    new_metrics = cluster_rule_extractor(X_train, X_test, y_train, y_test, dataset_par, save_graph)
+    new_metrics = cluster_rule_extractor(X_train, X_test, y_train, y_test, dataset_par, save_graph, disc_attributes,
+                                         cont_attributes)
     metric_list.append(['NEW METHOD'] + new_metrics)
 
     pd.DataFrame(metric_list, columns=['method', 'complete', 'correctness', 'fidelity', 'robustness', 'rule_n',

@@ -167,17 +167,22 @@ def data_scaler(in_df):
     return x_train_norm
 
 
-def relevant_column_selector(in_df, relevant_column_list):
+def relevant_column_selector(in_df, relevant_column_list, in_weight=None):
     """
-    Remove from the input Pandas dataframe the columns that are not included in the list of the relevant ones
+    Remove from the input Pandas dataframe the columns that are not included in the list of the relevant ones.
+    If in_weight is not none, the function removes also the model's weights corresponding to the not relevant variables
     :param in_df: Pandas dataframe
     :param relevant_column_list: list of relevant columns
+    :param in_weight: array of model's weights
     :return: the input Pandas dataframe containing only the relevant columns
     """
     for col in in_df.columns.tolist():
         if col not in relevant_column_list:
             in_df.drop(col, axis=1, inplace=True)
-    return in_df
+    if in_weight is not None:
+        weight_tdb = [i for i, col in enumerate(in_df.columns.tolist()) if col in relevant_column_list]
+        in_weight[0] = np.delete(in_weight[0], weight_tdb, 0)
+    return in_df, in_weight
 
 
 def dataset_uploader(file_name,
