@@ -11,6 +11,8 @@ from common_functions import dataset_uploader, relevant_column_selector, create_
 from matplotlib import pyplot
 import copy
 import multiprocessing
+import os
+os.environ["KERAS_BACKEND"] = "theano"
 CPU_COUNT = multiprocessing.cpu_count()
 
 
