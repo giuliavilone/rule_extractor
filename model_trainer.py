@@ -10,6 +10,8 @@ from sklearn.inspection import permutation_importance
 from common_functions import dataset_uploader, relevant_column_selector, create_empty_file, save_list
 from matplotlib import pyplot
 import copy
+import multiprocessing
+CPU_COUNT = multiprocessing.cpu_count()
 
 
 def create_model(train_x, n_classes, neurons, optimizer='Adam', init_mode='glorot_uniform',
@@ -102,7 +104,7 @@ def model_permutation_importance(train_x, train_y, test_x, test_y, model_par, ep
     # on the evaluation dataset.
     accuracy = max(history.history_['val_accuracy'])
     results = permutation_importance(wrapped_model, train_x, to_categorical(train_y, num_classes=model_par['classes']),
-                                     scoring='accuracy')
+                                     scoring='accuracy', n_jobs=CPU_COUNT)
     return results, accuracy
 
 

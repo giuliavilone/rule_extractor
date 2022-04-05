@@ -136,7 +136,9 @@ def create_arguments(conn, feature_set_name, graph_name, ruleset, conclusion_lis
         for argument_number in range(len(ruleset)):
             argument = ruleset[argument_number]
             rule_class = int(argument['class'])
-            conclusion = str(conclusion_list[rule_class]['conclusion']) + " [" + str(conclusion_list[rule_class]['c_from']) + ", " + str(conclusion_list[rule_class]['c_to']) + "]"
+            conclusion = str(conclusion_list[rule_class]['conclusion']) \
+                + " [" + str(conclusion_list[rule_class]['c_from']) + ", " + \
+                str(conclusion_list[rule_class]['c_to']) + "]"
             argument_string = argument_formatter(argument)
             cursor.execute(insert_query, (argument_string, conclusion, x_range[argument_number],
                                           y_range[argument_number], argument['rule_number'], graph_name,

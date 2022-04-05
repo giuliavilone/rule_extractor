@@ -372,7 +372,7 @@ def attack_weight_calculator(rule_a_sample, rule_b_sample, intersection):
     attacked rule. The idea is that the strength of the attack depends on the number of samples that are responsible for
     it in proportion to the total number of supporting samples. For example, let’s take two attacking rules, A and B,
     where A has 3 supporting samples and B has 4 and 2 samples are in the intersection. Then, Rule A has 2 out of 3
-    samples responsible for the attack (meaning the that the attack from B has strength 0.667) whereas Rule B has 2 out
+    samples responsible for the attack (meaning that the attack from B has strength 0.667) whereas Rule B has 2 out
     of 4 attacking samples (so the strength of the attack from A is 0.5)
     :param rule_a_sample: list of supporting samples of first rule
     :param rule_b_sample: list of supporting samples of second rule
@@ -384,12 +384,13 @@ def attack_weight_calculator(rule_a_sample, rule_b_sample, intersection):
     return ret
 
 
-def attack_definer(final_rules, merge_rules=False):
+def attack_definer(final_rules, merge_rules=False, inconsistency_budget=0.05):
     """
     Define the attack between conflicting rules
     :param final_rules: list of rules
     :param merge_rules: boolean variable. If true, two rules with the same conclusion and same list of variables in
     their antecedents will be joined together (see rule_merger function)
+    :param inconsistency_budget:
     :return: list of attackers, modified ruleset with merged rules
     """
     ret = []
@@ -424,10 +425,10 @@ def attack_definer(final_rules, merge_rules=False):
                                     "weight": 1})
                     else:
                         attack_weights = attack_weight_calculator(a_index, b_index, comparison_index)
-                        if attack_weights['rule_b'] >= attack_weights['rule_a']:
+                        if attack_weights['rule_b'] >= attack_weights['rule_a'] + inconsistency_budget:
                             ret.append({"source": a['rule_number'], "target": b['rule_number'], "type": "rebuttal",
                                         "weight": attack_weights['rule_b']})
-                        elif attack_weights['rule_a'] >= attack_weights['rule_b']:
+                        elif attack_weights['rule_a'] >= attack_weights['rule_b'] + inconsistency_budget:
                             ret.append({"source": b['rule_number'], "target": a['rule_number'], "type": "rebuttal",
                                         "weight": attack_weights['rule_a']})
     return ret, final_rules
