@@ -10,6 +10,7 @@ from imblearn.over_sampling import SMOTE
 import itertools
 import pickle
 import os
+from os.path import exists
 from sklearn.metrics import accuracy_score
 
 
@@ -85,7 +86,13 @@ def perturbator(in_df, mu=0, sigma=0.1):
     :param sigma: standard deviation of the normally distributed white noise
     """
     noise = np.random.normal(mu, sigma, in_df.shape)
-    return in_df + noise
+    ret = in_df + noise
+    # The rules are extracted on a specific input space whose limits must be preserved, so the addition of the
+    # white noise must keep the input instances between these limits
+    for col in ret.columns:
+        ret[col] = [x if x >= min(in_df[col]) else min(in_df[col]) for x in ret[col].tolist()]
+        ret[col] = [x if x <= max(in_df[col]) else max(in_df[col]) for x in ret[col].tolist()]
+    return ret
 
 
 def ensemble_predictions(members, test_x):
@@ -130,11 +137,13 @@ def data_file(file_name, path, remove_columns=True):
     return dataset
 
 
-def column_type_finder(dataset, target_var):
+def column_type_finder(file_name, dataset, target_var, path='relevant_columns/'):
     """
-    Define the type of data contained in the input Pandas dataframe
+    Define the type of data contained in the input Pandas dataframe and remove the irrelevant columns
+    :param file_name: name of the dataset under analysis
     :param dataset: Pandas dataframe
     :param target_var: name of the dependent variable (to be predicted by a model)
+    :param path:
     :return: the input dataset, the names of the columns containing categorical variable, the position of the columns
     containing discrete and continuous variables
     """
@@ -145,6 +154,11 @@ def column_type_finder(dataset, target_var):
             if index != target_var:
                 dataset = pd.get_dummies(dataset, columns=[index])
                 discrete_column_names.append(index)
+    # Removing the not relevant columns
+    relevant_column = load_list(file_name + '_relevant_columns', path)
+    if len(relevant_column) > 0:
+        relevant_column.append(target_var)
+        dataset, _ = relevant_column_selector(dataset, relevant_column)
     # The number of the discrete features must take into account the new dummy columns
     independent_columns = [item for item in dataset.columns.tolist() if item != target_var]
     out_disc = []
@@ -176,9 +190,8 @@ def relevant_column_selector(in_df, relevant_column_list, in_weight=None):
     :param in_weight: array of model's weights
     :return: the input Pandas dataframe containing only the relevant columns
     """
-    for col in in_df.columns.tolist():
-        if col not in relevant_column_list:
-            in_df.drop(col, axis=1, inplace=True)
+    columns_to_be_deleted = [item for item in in_df.columns.tolist() if item not in relevant_column_list]
+    in_df = in_df.drop(columns=columns_to_be_deleted)
     if in_weight is not None:
         weight_tdb = [i for i, col in enumerate(in_df.columns.tolist()) if col in relevant_column_list]
         in_weight[0] = np.delete(in_weight[0], weight_tdb, 0)
@@ -211,8 +224,10 @@ def dataset_uploader(file_name,
     continuous variables
     """
     le = LabelEncoder()
+    # Remove the columns that were deemed irrelevant from the correlation analysis
     dataset = data_file(file_name, path, remove_columns=remove_columns)
-    dataset, _, out_disc, out_cont = column_type_finder(dataset, target_var)
+    # Remove the columns that were deemed irrelevant from the feature
+    dataset, _, out_disc, out_cont = column_type_finder(file_name, dataset, target_var)
 
     # Separating independent variables from the target one
     y = le.fit_transform(dataset[target_var].tolist())
@@ -445,8 +460,11 @@ def save_list(in_list, filename):
 
 
 def load_list(filename, path):
-    with open(path + filename + '.txt', 'rb') as fp:
-        return pickle.load(fp)
+    if exists(path + filename + '.txt'):
+        with open(path + filename + '.txt', 'rb') as fp:
+            return pickle.load(fp)
+    else:
+        return []
 
 
 def rule_write(method_name, final_rules, dataset_par, path='final_rules/'):

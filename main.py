@@ -1,5 +1,5 @@
 import pandas as pd
-from common_functions import save_list, create_empty_file, dataset_uploader
+from common_functions import save_list, create_empty_file, dataset_uploader, load_list
 from keras.models import load_model
 from refne import refne_run
 from c45_test import run_c45_pane
@@ -7,7 +7,6 @@ from rxncn import rxncn_run
 from rxren import rxren_run
 from trepan_run import run_trepan
 from new_method import cluster_rule_extractor
-import sys
 
 
 # parameters = pd.read_csv('datasets/summary_new2.csv')
@@ -16,7 +15,8 @@ parameters = pd.read_csv('datasets-UCI/new_rules/summary.csv')
 data_path = 'datasets-UCI/new_rules/'
 save_graph = True
 
-for df in [0]:
+
+for df in [1]:
     metric_list = []
     dataset_par = parameters.iloc[df]
     dataset_name = dataset_par['dataset']
@@ -63,7 +63,7 @@ for df in [0]:
 
     print('---------------------- Working on NEW METHOD -----------------------')
     new_metrics = cluster_rule_extractor(X_train, X_test, y_train, y_test, dataset_par, save_graph, disc_attributes,
-                                         cont_attributes)
+                                         cont_attributes, model)
     metric_list.append(['NEW METHOD'] + new_metrics)
 
     pd.DataFrame(metric_list, columns=['method', 'complete', 'correctness', 'fidelity', 'robustness', 'rule_n',

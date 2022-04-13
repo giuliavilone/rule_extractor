@@ -11,8 +11,6 @@ from common_functions import dataset_uploader, relevant_column_selector, create_
 from matplotlib import pyplot
 import copy
 import multiprocessing
-import os
-os.environ["KERAS_BACKEND"] = "theano"
 CPU_COUNT = multiprocessing.cpu_count()
 
 
@@ -187,7 +185,7 @@ def variable_selector(train_df, test_df, train_y, test_y, original_accuracy, imp
 
 
 parameters = pd.read_csv('datasets-UCI/new_rules/summary.csv')
-parameters = parameters.iloc[0]
+parameters = parameters.iloc[2]
 print('--------------------------------------------------')
 print(parameters['dataset'])
 print('--------------------------------------------------')

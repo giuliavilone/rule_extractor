@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-from keras.models import load_model
 from rxren_rxncn_functions import model_pruned_prediction
 from common_functions import save_list, create_empty_file, attack_definer, rule_metrics_calculator
 from refne import synthetic_data_generator
@@ -13,6 +12,8 @@ import copy
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from dataset_split import number_split_finder, dataset_splitter_new  # dataset_splitter,
+import multiprocessing
+CPU_COUNT = multiprocessing.cpu_count()
 
 # These are to remove some tensorflow warnings. The code works in any case
 # import os
@@ -147,13 +148,15 @@ def rule_set_evaluator(original_y, rule_set, rule_area_only=False):
         ret_labels[t[1]] = t[2]
     empty_index = list(np.where(np.isnan(ret_labels))[0])
     if rule_area_only:
+        # Removing duplicates in the list of the indexes covered by the ruleset
         rule_indexes = list(set(rule_indexes))
         predicted_labels = ret_labels[rule_indexes]
-        predicted_labels = nan_replacer(predicted_labels, len(np.unique(original_y)))
+        # Replacing the nans with the number of output classes increased by 10
+        predicted_labels = nan_replacer(predicted_labels, len(np.unique(original_y))+10)
         accuracy = accuracy_score(predicted_labels.round(), original_y[rule_indexes])
     else:
         if len(empty_index) > 0:
-            ret_labels = nan_replacer(ret_labels, len(np.unique(original_y)))
+            ret_labels = nan_replacer(ret_labels, len(np.unique(original_y))+10)
         accuracy = accuracy_score(ret_labels.round(), original_y)
     return accuracy, ret_labels, empty_index
 
@@ -181,13 +184,15 @@ def elbow_method(in_df, threshold=0.05):
     return n_clusters
 
 
-def iterative_clustering(data, index_list, min_sample, xi_value, min_cluster_number):
+def iterative_clustering(data, index_list, min_sample, min_cluster_number, xi_value=0.05, distance_type='minkowski'):
     """
     Applied the OPTICS clustering algorithm iteratively until just a few samples are considered as outliers and not
     placed in any cluster (meaning that their label is -1).
     :return:
     """
-    clustering = OPTICS(min_samples=min_sample, xi=xi_value).fit(data.loc[index_list].to_numpy())
+    print("I am extracting the clusters")
+    clustering = OPTICS(min_samples=min_sample, xi=xi_value, n_jobs=CPU_COUNT, metric=distance_type
+                        ).fit(data.loc[index_list].to_numpy())
     # Increasing the labels of the clusters in case the OPTICS algorithm was already applied and some data are
     # already assigned to clusters
     new_clusters = [i + min_cluster_number if i != -1 else i for i in clustering.labels_.tolist()]
@@ -204,25 +209,28 @@ def iterative_clustering(data, index_list, min_sample, xi_value, min_cluster_num
     return data
 
 
-def rule_extractor(original_data, original_label, in_df, label_col, minimum_acc, rule_set, min_sample=10):
+def rule_extractor(original_data, original_label, in_df, label_col, min_accuracy, rule_set, min_sample=20):
     """
     Return the ruleset automatically extracted to mimic the logic of a machine-learned model.
     :param original_data:
     :param original_label:
     :param in_df:
     :param label_col:
-    :param minimum_acc:
+    :param min_accuracy:
     :param rule_set:
     :param min_sample:
     :return: a list of dictionaries where each dictionary is a rule
     """
-    best_accuracy = minimum_acc
-    groups = in_df.groupby(label_col, as_index=False)
+    groups = in_df.groupby(by=label_col, as_index=False)
     for key, group in groups:
-        if len(group) > min_sample * 2:  # To allow the OPTICS to have enough samples to create at least 2 clusters
-            # The OPTICS parameter xi is set equal to 0 to minimize the number of outliers
+        best_accuracy = min_accuracy
+        print("Working on class: ", key)
+        print("The group is of length ", len(group), " and the accuracy is ", best_accuracy)
+        # To allow the OPTICS to have enough samples to create at least 2 clusters
+        if len(group) > min_sample * 2 and best_accuracy < 1:
+            print("I am working on a group of length ", len(group))
             group['clusters'] = -2
-            group = iterative_clustering(group, group.index.tolist(), min_sample, 0, 0)
+            group = iterative_clustering(group, group.index.tolist(), min_sample, 0)
             # Removing outliers (instances with cluster label = -1). They might be covered by other rules or dealt with
             # at the end when the ruleset will be completed
             group = group[group['clusters'] != -1]
@@ -238,14 +246,14 @@ def rule_extractor(original_data, original_label, in_df, label_col, minimum_acc,
             print("New ruleset accuracy: ", new_rules_accuracy)
             if new_ruleset_accuracy > best_accuracy:
                 rule_set = rule_set + new_rules
-                best_accuracy = new_ruleset_accuracy
             else:
                 for rule in new_rules:
                     rule_acc, _, _ = rule_set_evaluator(original_label, rule_set + [rule], rule_area_only=True)
+                    print("The accuracy of the new rule is: ", rule_acc)
                     if rule_acc < best_accuracy:
                         rule_indexes = rule_elicitation(in_df, rule)
                         new_x = in_df[in_df.index.isin(rule_indexes)]
-                        rule_set = rule_extractor(original_data, original_label, new_x, label_col, minimum_acc,
+                        rule_set = rule_extractor(original_data, original_label, new_x, label_col, best_accuracy,
                                                   rule_set)
                     else:
                         rule_set.append(rule)
@@ -261,12 +269,15 @@ def rule_extractor(original_data, original_label, in_df, label_col, minimum_acc,
 def find_min_position(array):
     """
     Return the position of the minimum positive number (>0) of each row of the input array
-    :param array:
+    :param array: numpy array
     :return: list of the position of the minimum value of each row of input array
     """
     min_list = []
     for row in array:
-        min_elem = min(row[row > 0])
+        if max(row) > 0:
+            min_elem = min(row[row > 0])
+        else:
+            min_elem = 0
         min_list.append(list(np.where(row == min_elem)[0])[0])
     return min_list
 
@@ -374,6 +385,7 @@ def antecedent_pruning(ruleset, original_x):
     :return:
     """
     limits = [[original_x[col].min(), original_x[col].max()] for col in original_x.columns.tolist()]
+    out_ruleset = []
     for rule in ruleset:
         remove_indices = []
         for i, v in enumerate(rule['limits']):
@@ -381,12 +393,16 @@ def antecedent_pruning(ruleset, original_x):
                 remove_indices.append(i)
         rule['limits'] = item_remover(rule['limits'], remove_indices)
         rule['columns'] = item_remover(rule['columns'], remove_indices)
-    return ruleset
+        # Append only those rules that have at least one antecedent that has not been removed
+        if len(rule['limits']) > 0:
+            out_ruleset.append(rule)
+    return out_ruleset
 
 
-def cluster_rule_extractor(x_train, x_test, y_train, y_test, dataset_par, save_graph, disc_attributes, cont_attributes):
+def cluster_rule_extractor(x_train, x_test, y_train, y_test, dataset_par, save_graph, disc_attributes, cont_attributes,
+                           model):
     minimum_acc = 0.8
-    max_row = 25000
+    max_row = 25000000
     label_col = dataset_par['output_name']
     n_class = dataset_par['classes']
     try:
@@ -394,11 +410,9 @@ def cluster_rule_extractor(x_train, x_test, y_train, y_test, dataset_par, save_g
     except Exception as ex:
         print(ex)
         min_row = 10
+    print("The minimum number of rows is: ", min_row)
 
     x_train = pd.concat([x_train, x_test], ignore_index=True)
-    model = load_model('trained_models/trained_model_' + dataset_par['dataset'] + '_'
-                       + str(dataset_par['best_model']) + '.h5'
-                       )
 
     results = np.argmax(model.predict(x_train), axis=1)
     weights = np.array(model.get_weights())
