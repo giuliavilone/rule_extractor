@@ -16,7 +16,7 @@ data_path = 'datasets-UCI/new_rules/'
 save_graph = True
 
 
-for df in [1]:
+for df in [0]:
     metric_list = []
     dataset_par = parameters.iloc[df]
     dataset_name = dataset_par['dataset']
@@ -38,7 +38,7 @@ for df in [1]:
     print(X_train.columns.tolist())
 
     model = load_model('trained_models/trained_model_' + dataset_par['dataset'] + '_'
-                       + str(dataset_par['best_model']) + '.h5')
+                       + str(int(dataset_par['best_model'])) + '.h5')
 
     print('---------------------- Working on REFNE -----------------------')
     # metric_refne = refne_run(X_train, X_test, y_test, disc_attributes, cont_attributes, dataset_par, model, save_graph,

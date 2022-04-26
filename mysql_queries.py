@@ -2,20 +2,37 @@ from mysql.connector import (connection)
 from mysql.connector import errorcode, Error
 
 
+def color_assignment(attribute: str, color_list: list, color_dict: dict):
+    if attribute in color_dict.keys():
+        color = color_dict[attribute]
+    else:
+        color = color_list.pop(0)
+        color_dict[attribute] = color
+    return color, color_list, color_dict
+
+
 def create_attribute_list(ruleset):
+    color_list = ['#D50000', '#880E4F', '#5499C7', '#4A148C', '#148F77', '#0E6251', '#0099FF', '#1E8449', '#145A32',
+                  '#795548', '#0033FF', '#757575', '#9933CC', '#37474F', '#000033', '#FF00CC', '#E65100', '#EF6C00',
+                  '#1B5E20', '#455A64', '#4D646F', '#00CC00', '#666666', '#000000']
+    color_dict = {}
     ret = []
     for rule in ruleset:
         for item_number in range(len(rule['limits'])):
             item = rule['limits'][item_number]
             if type(item[0]) is list:
                 for sub_item_number in range(len(item)):
+                    attribute = rule['columns'][sub_item_number]
+                    color, color_list, color_dict = color_assignment(attribute, color_list, color_dict)
                     sub_item = item[sub_item_number]
-                    new_attribute = {'attribute': rule['columns'][sub_item_number], 'a_level': str(sub_item),
-                                     'a_from': sub_item[0], 'a_to': sub_item[1]}
+                    new_attribute = {'attribute': attribute, 'a_level': str(sub_item), 'a_from': sub_item[0],
+                                     'a_to': sub_item[1], 'color': color}
                     ret.append(new_attribute)
             else:
+                attribute = rule['columns'][item_number]
+                color, color_list, color_dict = color_assignment(attribute, color_list, color_dict)
                 new_attribute = {'attribute': rule['columns'][item_number], 'a_level': str(item), 'a_from': item[0],
-                                 'a_to': item[1]}
+                                 'a_to': item[1], 'color': color}
                 ret.append(new_attribute)
     return [i for n, i in enumerate(ret) if i not in ret[n + 1:]]
 
@@ -110,13 +127,14 @@ def create_graphs(conn, feature_set_name, graph_name, attacks, font_size=30):
 
 
 def create_attributes(conn, feature_set_name, attribute_list):
-    insert_query = """INSERT INTO attributes (attribute, featureset, a_level, a_from, a_to) VALUES(%s,%s,%s,%s,%s)"""
+    insert_query = """INSERT INTO attributes (attribute, featureset, a_level, a_from, a_to, color) 
+    VALUES(%s,%s,%s,%s,%s,%s)"""
     try:
         cursor = conn.cursor()
         for attribute in attribute_list:
             cursor.execute(insert_query, (attribute['attribute'], feature_set_name,
-                                          str(attribute['a_level']).replace(" ", ""),
-                                          float(attribute['a_from']), float(attribute['a_to'])
+                                          str(attribute['a_level']).replace(" ", ""), float(attribute['a_from']),
+                                          float(attribute['a_to']), str(attribute['color'])
                                           )
                            )
         conn.commit()
@@ -134,7 +152,10 @@ def create_arguments(conn, feature_set_name, graph_name, ruleset, conclusion_lis
     try:
         cursor = conn.cursor()
         for argument_number in range(len(ruleset)):
+            print(argument_number)
             argument = ruleset[argument_number]
+            print(argument)
+            print(conclusion_list)
             rule_class = int(argument['class'])
             conclusion = str(conclusion_list[rule_class]['conclusion']) \
                 + " [" + str(conclusion_list[rule_class]['c_from']) + ", " + \

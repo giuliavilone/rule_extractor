@@ -13,3 +13,4 @@ tensorflow~=2.8.0
 scikeras~=0.6.1
 imblearn~=0.0
 dash~=2.3.0
+mysql-connector~=2.2.9

@@ -185,7 +185,7 @@ def variable_selector(train_df, test_df, train_y, test_y, original_accuracy, imp
 
 
 parameters = pd.read_csv('datasets-UCI/new_rules/summary.csv')
-parameters = parameters.iloc[2]
+parameters = parameters.iloc[4]
 print('--------------------------------------------------')
 print(parameters['dataset'])
 print('--------------------------------------------------')
@@ -195,7 +195,7 @@ x_train_list, x_test_list, y_train_list, y_test_list, _, _, _ = dataset_uploader
                                                                                  data_path,
                                                                                  target_var=parameters['output_name'],
                                                                                  cross_split=5,
-                                                                                 apply_smote=False,
+                                                                                 apply_smote=True,
                                                                                  data_normalization=False
                                                                                  )
 best_accuracy = 0

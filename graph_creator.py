@@ -32,16 +32,18 @@ for df in [0]:
         print(attack_list)
         print('-----------------------------------------------------------------------------------------')
         final_rules = load_list(method + dataset_par['dataset'] + "_final_rules", data_path)
-        print('-------------------------------------- FINAL RULES --------------------------------------')
-        print(final_rules)
+        # print('-------------------------------------- FINAL RULES --------------------------------------')
+        # print(final_rules)
         print('-----------------------------------------------------------------------------------------')
         sample_indexes = data_selector(final_rules)
-        X_train, X_test, y_train, y_test, _, _, _ = dataset_uploader(dataset_par, 'datasets-UCI/new_rules/',
+        X_train, X_test, y_train, y_test, _, _, _ = dataset_uploader(dataset_par['dataset'],
+                                                                     'datasets-UCI/new_rules/',
                                                                      target_var=dataset_par['output_name'],
-                                                                     apply_smothe=False)
+                                                                     apply_smote=False,
+                                                                     data_normalization=False)
         X_train, X_test, y_train, y_test = X_train[0], X_test[0], y_train[0], y_test[0]
         model = load_model('trained_models/trained_model_' + dataset_par['dataset'] + '_'
-                           + str(dataset_par['best_model']) + '.h5')
+                           + str(int(dataset_par['best_model'])) + '.h5')
         X_tot = pd.concat([X_train, X_test], ignore_index=True)
         y_tot = np.concatenate((y_train, y_test))
         y_pred = np.argmax(model.predict(X_tot), axis=1)
