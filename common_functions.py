@@ -4,7 +4,7 @@ from keras.layers import Dense, Dropout
 import numpy as np
 from scipy.stats import mode
 import pandas as pd
-from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.preprocessing import LabelEncoder, MinMaxScaler
 from sklearn.model_selection import StratifiedKFold
 from imblearn.over_sampling import SMOTE
 import itertools
@@ -90,8 +90,9 @@ def perturbator(in_df, mu=0, sigma=0.1):
     # The rules are extracted on a specific input space whose limits must be preserved, so the addition of the
     # white noise must keep the input instances between these limits
     for col in ret.columns:
-        ret[col] = [x if x >= min(in_df[col]) else min(in_df[col]) for x in ret[col].tolist()]
-        ret[col] = [x if x <= max(in_df[col]) else max(in_df[col]) for x in ret[col].tolist()]
+        print("Perturbing column: ", col)
+        ret[col] = np.minimum(ret[col], max(in_df[col])).tolist()
+        ret[col] = np.maximum(ret[col], min(in_df[col])).tolist()
     return ret
 
 
@@ -175,7 +176,7 @@ def data_scaler(in_df):
     :param in_df: input pandas Dataframe
     :return:
     """
-    std_scale = StandardScaler().fit(in_df)
+    std_scale = MinMaxScaler().fit(in_df)
     x_train_norm = std_scale.transform(in_df)
     x_train_norm = pd.DataFrame(x_train_norm, index=in_df.index, columns=in_df.columns)
     return x_train_norm

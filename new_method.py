@@ -200,6 +200,7 @@ def iterative_clustering(data, index_list, min_sample, min_cluster_number, xi_va
     unique_labels, labels_frequency = np.unique(new_clusters, return_counts=True)
     # Retrieving the index of the -1 element (if it exists)
     idx = np.where(unique_labels == -1)[0]
+    print("I still have these instances not classified: ", idx, " with length: ", len(idx))
     # If the label -1 exists, check that its frequency is greater than min_sample * 2. If this is the case, the
     # OPTICS algorithm can be applied again
     if len(idx) > 0 and labels_frequency[idx[0]] >= min_sample * 2:
@@ -239,11 +240,15 @@ def rule_extractor(original_data, original_label, in_df, label_col, min_accuracy
             # Removing the antecedents that have limits spanning the entire range of values
             new_rules = antecedent_pruning(new_rules, original_data)
             # Removing the rules that do not improve the accuracy
-            new_rules_accuracy, _, _ = rule_set_evaluator(original_label, new_rules, rule_area_only=True)
-            new_rules = rule_pruning(new_rules, new_rules_accuracy, original_label)
-            # Calculating the accuracy of the entire ruleset that includes also the new rules
-            new_ruleset_accuracy, _, _ = rule_set_evaluator(original_label, rule_set + new_rules, rule_area_only=True)
-            print("New ruleset accuracy: ", new_rules_accuracy)
+            keep_all_the_rules = True
+            if keep_all_the_rules:
+                new_ruleset_accuracy = 1
+            else:
+                new_rules_accuracy, _, _ = rule_set_evaluator(original_label, new_rules, rule_area_only=True)
+                new_rules = rule_pruning(new_rules, new_rules_accuracy, original_label)
+                # Calculating the accuracy of the entire ruleset that includes also the new rules
+                new_ruleset_accuracy, _, _ = rule_set_evaluator(original_label, rule_set + new_rules, rule_area_only=True)
+                print("New ruleset accuracy: ", new_rules_accuracy)
             if new_ruleset_accuracy > best_accuracy:
                 rule_set = rule_set + new_rules
             else:
@@ -363,7 +368,13 @@ def ruleset_definer(original_x, predicted_y, dataset_par, weights, out_column, m
 
     rules = rule_extractor(original_x, predicted_y, x, out_column, minimum_acc, [], min_sample=min_row)
     rule_accuracy, _, _ = rule_set_evaluator(predicted_y, rules)
-    final_rules = rule_pruning(rules, rule_accuracy, predicted_y)
+    print("Calculating the rule accuracy")
+    rule_pruning = False
+    if rule_pruning:
+        final_rules = rule_pruning(rules, rule_accuracy, predicted_y)
+    else:
+        final_rules = rules
+    print("I am done, leaving the rule_definer function")
     return final_rules
 
 
@@ -444,7 +455,7 @@ def cluster_rule_extractor(x_train, x_test, y_train, y_test, dataset_par, save_g
     # print(final_rules)
     # cluster_plots(X, y, label_col)
     # cluster_plots(X, rule_prediction.round().astype(int), label_col)
-
+    print("I am calculating the metrics")
     metrics = rule_metrics_calculator(x_train, np.concatenate([y_train, y_test], axis=0), results, final_rules, n_class)
     if save_graph:
         attack_list, final_rules = attack_definer(final_rules)
@@ -452,5 +463,6 @@ def cluster_rule_extractor(x_train, x_test, y_train, y_test, dataset_par, save_g
         save_list(attack_list, 'NEW_METHOD_' + dataset_par['dataset'] + "_attack_list")
         create_empty_file('NEW_METHOD_' + dataset_par['dataset'] + "_final_rules")
         save_list(final_rules, 'NEW_METHOD_' + dataset_par['dataset'] + "_final_rules")
+        # Must create the file with the list of the output classes
 
     return metrics

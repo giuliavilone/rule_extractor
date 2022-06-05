@@ -13,7 +13,7 @@ from new_method import cluster_rule_extractor
 parameters = pd.read_csv('datasets-UCI/new_rules/summary.csv')
 # data_path = 'datasets/'
 data_path = 'datasets-UCI/new_rules/'
-save_graph = True
+save_graph = False
 
 
 for df in [0]:
