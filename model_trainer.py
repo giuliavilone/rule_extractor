@@ -7,7 +7,7 @@ from keras.utils.np_utils import to_categorical
 from scikeras.wrappers import KerasClassifier
 import pandas as pd
 from sklearn.inspection import permutation_importance
-from common_functions import dataset_uploader, relevant_column_selector, create_empty_file, save_list
+from common_functions import DatasetUploader, relevant_column_selector, create_empty_file, save_list
 from matplotlib import pyplot
 import copy
 import multiprocessing
@@ -48,15 +48,16 @@ def model_train(train_x, train_y, test_x, test_y, model, model_name, n_classes, 
 
 
 def model_creator(item, path_to_data, relevant_variable=None, cross_split=5, remove_columns=True):
-    train_x, test_x, train_y, test_y, labels, _, _ = dataset_uploader(item['dataset'], path_to_data,
-                                                                      target_var=item['output_name'],
-                                                                      cross_split=cross_split,
-                                                                      data_normalization=False,
-                                                                      remove_columns=remove_columns
-                                                                      )
+    dataset = DatasetUploader(item['dataset'],
+                              path_to_data,
+                              target_var=item['output_name'],
+                              cross_split=cross_split,
+                              remove_columns=remove_columns)
+
+    train_x, test_x, train_y, test_y = dataset.stratified_k_fold()
     ret = []
     for idx in range(len(train_x)):
-        train_x_idx, test_x_idx, train_y_idx, test_y_idx = train_x[0], test_x[0], train_y[0], test_y[0]
+        train_x_idx, test_x_idx, train_y_idx, test_y_idx = train_x[idx], test_x[idx], train_y[idx], test_y[idx]
         if relevant_variable is not None:
             train_x_idx, _ = relevant_column_selector(train_x_idx, relevant_variable)
             test_x_idx, _ = relevant_column_selector(test_x_idx, relevant_variable)
@@ -185,19 +186,19 @@ def variable_selector(train_df, test_df, train_y, test_y, original_accuracy, imp
 
 
 parameters = pd.read_csv('datasets-UCI/new_rules/summary.csv')
-parameters = parameters.iloc[4]
+parameters = parameters.iloc[0]
 print('--------------------------------------------------')
 print(parameters['dataset'])
 print('--------------------------------------------------')
 data_path = 'datasets-UCI/new_rules/'
 
-x_train_list, x_test_list, y_train_list, y_test_list, _, _, _ = dataset_uploader(parameters['dataset'],
-                                                                                 data_path,
-                                                                                 target_var=parameters['output_name'],
-                                                                                 cross_split=5,
-                                                                                 apply_smote=True,
-                                                                                 data_normalization=False
-                                                                                 )
+dataset = DatasetUploader(parameters['dataset'],
+                          data_path,
+                          target_var=parameters['output_name'],
+                          cross_split=5,
+                          )
+x_train_list, x_test_list, y_train_list, y_test_list = dataset.stratified_k_fold()
+
 best_accuracy = 0
 relevant_columns = []
 for ix in range(len(x_train_list)):

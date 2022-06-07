@@ -1,5 +1,5 @@
 import pandas as pd
-from common_functions import save_list, create_empty_file, dataset_uploader, load_list
+from common_functions import save_list, create_empty_file, DatasetUploader, load_list
 from keras.models import load_model
 from refne import refne_run
 from c45_test import run_c45_pane
@@ -24,13 +24,15 @@ for df in [0]:
     print('--------------------------------------------------')
     print(dataset_name)
     print('--------------------------------------------------')
-    X_train, X_test, y_train, y_test, labels, disc_attributes, cont_attributes = dataset_uploader(dataset_name,
-                                                                                                  data_path,
-                                                                                                  target_var=label_col,
-                                                                                                  cross_split=5,
-                                                                                                  apply_smote=False,
-                                                                                                  data_normalization=False
-                                                                                                  )
+    dataset = DatasetUploader(dataset_name, data_path,
+                              target_var=label_col,
+                              apply_smote=False,
+                              data_normalization=False)
+    X_train, X_test, y_train, y_test = dataset.stratified_k_fold(best_split=int(dataset_par['best_model']))
+    dataset.column_type_counter()
+    disc_attributes, cont_attributes = dataset.discrete_columns_indexes, dataset.continuous_columns_indexes
+    disc_attributes_names = dataset.discrete_column_names
+
     # create_empty_file(dataset_par['dataset'] + "_labels")
     # save_list(labels, dataset_par['dataset'] + "_labels")
 
@@ -41,8 +43,8 @@ for df in [0]:
                        + str(int(dataset_par['best_model'])) + '.h5')
 
     print('---------------------- Working on REFNE -----------------------')
-    # metric_refne = refne_run(X_train, X_test, y_test, disc_attributes, cont_attributes, dataset_par, model, save_graph,
-    #                          data_path)
+    metric_refne = refne_run(X_train, X_test, y_test, disc_attributes_names, cont_attributes, dataset_par, model,
+                             save_graph)
     # metric_list.append(['REFNE'] + metric_refne)
 
     print('---------------------- Working on C45 PANE -----------------------')

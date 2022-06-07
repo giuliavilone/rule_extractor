@@ -297,15 +297,11 @@ def discrete_column_group_finder(df, original_discrete_cols):
     return out_list
 
 
-def refne_run(X_train, X_test, y_test, discrete_attributes, continuous_attributes, dataset_par, model, save_graph,
-              path):
-    original_data = data_file(dataset_par['dataset'], path)
+def refne_run(X_train, X_test, y_test, discrete_columns, continuous_attributes, dataset_par, model, save_graph):
     label_col = dataset_par['output_name']
-    _, original_discrete_columns, _, _ = column_type_finder(original_data, label_col)
-    discrete_col_groups = discrete_column_group_finder(X_train, original_discrete_columns)
-    discrete_attributes = column_translator(X_train, label_col, discrete_attributes)
+    discrete_col_groups = discrete_column_group_finder(X_train, discrete_columns)
     continuous_attributes = column_translator(X_train, label_col, continuous_attributes)
-    all_column_combos = column_combos(categorical_var=original_discrete_columns, continuous_var=continuous_attributes)
+    all_column_combos = column_combos(categorical_var=discrete_columns, continuous_var=continuous_attributes)
     synth_samples = X_train.shape[0]
     xSynth = synthetic_data_generator(X_train, synth_samples, continuous_attributes, discrete_col_groups)
     xSynth = xSynth.append(X_train, ignore_index=True)
@@ -327,7 +323,7 @@ def refne_run(X_train, X_test, y_test, discrete_attributes, continuous_attribute
             unique_values = np.unique(xSynth[attr]).tolist()
             inter_dict[attr] = [list(a) for a in zip(unique_values, unique_values)]
 
-    decoded_xSynth = dataset_decoder(xSynth, original_discrete_columns)
+    decoded_xSynth = dataset_decoder(xSynth, discrete_columns)
     final_rules = rule_maker(xSynth, decoded_xSynth, inter_dict, all_column_combos, label_col, model,
                              continuous_attributes, discrete_col_groups)
 

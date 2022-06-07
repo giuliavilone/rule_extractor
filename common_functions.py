@@ -1,3 +1,5 @@
+import copy
+
 from keras.callbacks import ModelCheckpoint
 from keras.models import Sequential
 from keras.layers import Dense, Dropout
@@ -127,7 +129,9 @@ def data_file(file_name, path, remove_columns=True):
                           'skin_nonskin': ['B'],
                           'htru': ['mean_dm_snr_curve', 'kurtosis_dm_snr_curve', 'skewness_profile', 'mean_profile'],
                           'occupancy': ['HumidityRatio', 'Temperature'],
-                          'shuttle': ['S7', 'S8', 'S9']
+                          'shuttle': ['S7', 'S8', 'S9'],
+                          'adult': ['education']  # Beacuse there is the field education-num which represents the same
+                                                  # information but in numbers
                           }
     dataset = pd.read_csv(path + file_name + '.csv')
     dataset = dataset.dropna().reset_index(drop=True)
@@ -167,19 +171,6 @@ def column_type_finder(file_name, dataset, target_var, path='relevant_columns/')
         out_disc += [i for i, v in enumerate(independent_columns) if v.find(col + '_') > -1]
     out_cont = [i for i, v in enumerate(independent_columns) if i not in out_disc]
     return dataset, discrete_column_names, out_disc, out_cont
-
-
-def data_scaler(in_df):
-    """
-    Normalise the input dataset with the StandardScaler sklearn
-    function
-    :param in_df: input pandas Dataframe
-    :return:
-    """
-    std_scale = MinMaxScaler().fit(in_df)
-    x_train_norm = std_scale.transform(in_df)
-    x_train_norm = pd.DataFrame(x_train_norm, index=in_df.index, columns=in_df.columns)
-    return x_train_norm
 
 
 def relevant_column_selector(in_df, relevant_column_list, in_weight=None):
@@ -234,8 +225,6 @@ def dataset_uploader(file_name,
     y = le.fit_transform(dataset[target_var].tolist())
     labels = list(le.fit(dataset[target_var].tolist()).classes_)
     x = dataset.drop(columns=[target_var])
-    if data_normalization:
-        x = data_scaler(x)
     # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=(1 - train_split))
     x_train_list, x_test_list, y_train_list, y_test_list = [], [], [], []
     cv = StratifiedKFold(n_splits=cross_split)
@@ -249,6 +238,134 @@ def dataset_uploader(file_name,
         y_train_list.append(y_train)
         y_test_list.append(y_test)
     return x_train_list, x_test_list, y_train_list, y_test_list, labels, out_disc, out_cont
+
+
+class DatasetUploader:
+    """
+    This objects allows to upload a dataset from a csv file into a Pandas dataframe and applies, if requested, the
+    following data manipulation techniques:
+    1) the SMOTE algorithm to oversample the minority class(es);
+    2) split the input dataset into a list of training and  evaluation datasets with the Stratified K Fold algorithm;
+    3) normalise the input data.
+
+    Parameters
+    ----------
+    file_name: name of the csv file to be uploaded
+    path: path to the csv file to be uploaded
+    target_var: name of the dependent variable (to be predicted by a model)
+    cross_split: number of folds for the Stratified K Fold algorithm
+    apply_smote: boolean variable. If true, the SMOTE oversampling algorithm is applied
+    remove_columns: boolean variable. If true, the columns listed in the variable "feat_to_be_deleted" are
+    deleted (see function data_file)
+    seed:
+
+    Attributes
+    ----------
+    dataset: the whole dataset (with descriptive and target variables) but without the columns to be removed
+    y: a list containing the original target variable
+    labels: a list with the unique values of the target variable
+    x: a panda dataframe with the descriptive variables
+
+    """
+
+    def __init__(self,
+                 file_name,
+                 path,
+                 target_var='class',
+                 cross_split=5,
+                 apply_smote=True,
+                 remove_columns=True,
+                 data_normalization=True,
+                 seed=1983
+                 ):
+        # Parameters
+        self.file_name = file_name
+        self.path = path
+        self.target_var = target_var
+        self.cross_split = cross_split
+        self.apply_smote = apply_smote
+        self.remove_columns = remove_columns
+        self.data_normalization = data_normalization
+        self.seed = seed
+        # Attributes
+        self.discrete_column_names = []
+        self.continuous_columns_indexes = []
+        self.discrete_columns_indexes = []
+        self.cv = StratifiedKFold(n_splits=cross_split)
+        self.std_scale = MinMaxScaler()
+        self.dataset, self.labels, self.x, self.y = self.data_uploader()
+        # This contains the list of the original names of the discrete columns
+
+    def data_scaler(self, in_df):
+        """
+        Normalise the input dataset with the MinMaxScaler sklearn function
+        :return: pandas dataframe with normalised data
+        """
+        self.std_scale.fit(in_df)
+        x_norm = self.std_scale.transform(in_df)
+        x_norm = pd.DataFrame(x_norm, index=in_df.index, columns=in_df.columns)
+        return x_norm
+
+    def column_types(self, in_df):
+        col_types = in_df.dtypes
+        for index, value in col_types.items():
+            if value in ['object', 'bool']:
+                if index != self.target_var:
+                    self.discrete_column_names.append(index)
+                    in_df = pd.get_dummies(in_df, columns=[index])
+        return in_df
+
+    def irrelevant_column_remover(self, ind_df, path='relevant_columns/'):
+        relevant_column = load_list(self.file_name + '_relevant_columns', path)
+        if len(relevant_column) > 0:
+            relevant_column.append(self.target_var)
+            ind_df, _ = relevant_column_selector(ind_df, relevant_column)
+        return ind_df
+
+    def label_encoder(self, in_df):
+        le = LabelEncoder()
+        y = le.fit_transform(in_df[self.target_var].tolist())
+        labels = list(le.fit(in_df[self.target_var].tolist()).classes_)
+        x = in_df.drop(columns=[self.target_var])
+        return labels, x, y
+
+    def data_uploader(self):
+        dataset = data_file(self.file_name, self.path, remove_columns=self.remove_columns)
+        dataset = self.column_types(dataset)
+        dataset = self.irrelevant_column_remover(dataset)
+        # Separating independent variables from the target one
+        labels, x, y = self.label_encoder(dataset)
+        if self.data_normalization:
+            x = self.data_scaler(x)
+        return dataset, labels, x, y
+
+    def column_type_counter(self):
+        """This function returns the lists of the indexes of the continuous and discrete columns"""
+        independent_columns = [item for item in self.dataset.columns.tolist() if item != self.target_var]
+        out_disc = []
+        for col in self.discrete_column_names:
+            self.discrete_columns_indexes += [i for i, v in enumerate(independent_columns) if v.find(col + '_') > -1]
+        self.continuous_columns_indexes += [i for i, v in enumerate(independent_columns) if i not in out_disc]
+
+    def stratified_k_fold(self, best_split=None):
+        """
+        The input parameter best_split can be used after the model training to get the split related to the best model
+        """
+        x_train_list, x_test_list, y_train_list, y_test_list = [], [], [], []
+        for train_idx, test_idx, in self.cv.split(self.x, self.y):
+            x_train, y_train = self.x[self.x.index.isin(train_idx)], self.y[train_idx]
+            if self.apply_smote:
+                x_train, y_train = SMOTE().fit_resample(x_train, y_train)
+            x_test, y_test = self.x[self.x.index.isin(test_idx)], self.y[test_idx]
+            x_train_list.append(x_train)
+            x_test_list.append(x_test)
+            y_train_list.append(y_train)
+            y_test_list.append(y_test)
+        if type(best_split) == int:
+            return [x_train_list[best_split]], [x_test_list[best_split]], \
+                   [y_train_list[best_split]], [y_test_list[best_split]]
+        else:
+            return x_train_list, x_test_list, y_train_list, y_test_list
 
 
 def rule_elicitation(x, in_rule):
