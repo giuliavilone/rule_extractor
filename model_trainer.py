@@ -47,21 +47,15 @@ def model_train(train_x, train_y, test_x, test_y, model, model_name, n_classes, 
     return model, history
 
 
-def model_creator(item, path_to_data, relevant_variable=None, cross_split=5, remove_columns=True):
-    dataset = DatasetUploader(item['dataset'],
-                              path_to_data,
-                              target_var=item['output_name'],
-                              cross_split=cross_split,
-                              remove_columns=remove_columns)
-
-    train_x, test_x, train_y, test_y = dataset.stratified_k_fold()
+def model_creator(item, data, relevant_variable=None):
+    train_x, test_x, train_y, test_y = data.stratified_k_fold()
     ret = []
     for idx in range(len(train_x)):
         train_x_idx, test_x_idx, train_y_idx, test_y_idx = train_x[idx], test_x[idx], train_y[idx], test_y[idx]
         if relevant_variable is not None:
             train_x_idx, _ = relevant_column_selector(train_x_idx, relevant_variable)
             test_x_idx, _ = relevant_column_selector(test_x_idx, relevant_variable)
-        model = create_model(train_x_idx, item['classes'], item['neurons'], item['optimizer'], item['init_mode'],
+        model = create_model(train_x_idx, int(item['classes']), item['neurons'], item['optimizer'], item['init_mode'],
                              item['activation'], item['dropout_rate']
                              )
         m, h = model_train(train_x_idx, train_y_idx, test_x_idx, test_y_idx, model,
@@ -87,25 +81,27 @@ def model_permutation_importance(train_x, train_y, test_x, test_y, model_par, ep
     :param batch_size: number of samples processed before the model is updated
     :return:
     """
-    wrapped_model = KerasClassifier(build_fn=lambda: create_model(train_x, model_par['classes'], model_par['neurons'],
+    num_out_classes = int(model_par['classes'])
+    wrapped_model = KerasClassifier(build_fn=lambda: create_model(train_x, num_out_classes, model_par['neurons'],
                                                                   model_par['optimizer'], model_par['init_mode'],
                                                                   model_par['activation'], model_par['dropout_rate']),
                                     epochs=epochs,
                                     batch_size=batch_size
                                     )
-    other_args = {"validation_data": (test_x, to_categorical(test_y, num_classes=model_par['classes'])),
+    other_args = {"validation_data": (test_x, to_categorical(test_y, num_classes=num_out_classes)),
                   "verbose": 1
                   }
     history = wrapped_model.fit(train_x,
-                                to_categorical(train_y, num_classes=model_par['classes']),
+                                to_categorical(train_y, num_classes=num_out_classes),
                                 **other_args
                                 )
     # Calculate the maximum prediction accuracy that the network can obtain on the test valuation dataset.
     # When the final model will be trained, the fit function will save the model with the highest prediction accuracy
     # on the evaluation dataset.
     accuracy = max(history.history_['val_accuracy'])
-    results = permutation_importance(wrapped_model, train_x, to_categorical(train_y, num_classes=model_par['classes']),
-                                     scoring='accuracy', n_jobs=CPU_COUNT)
+    results = permutation_importance(wrapped_model, train_x, to_categorical(train_y, num_classes=num_out_classes),
+                                     scoring='accuracy', n_jobs=CPU_COUNT
+                                     )
     return results, accuracy
 
 
@@ -185,40 +181,41 @@ def variable_selector(train_df, test_df, train_y, test_y, original_accuracy, imp
     return train_df, test_df
 
 
-parameters = pd.read_csv('datasets-UCI/new_rules/summary.csv')
-parameters = parameters.iloc[0]
-print('--------------------------------------------------')
-print(parameters['dataset'])
-print('--------------------------------------------------')
-data_path = 'datasets-UCI/new_rules/'
+parameters_list = pd.read_csv('datasets/summary.csv')
+data_list = [9, 10, 12, 13, 16, 17, 19]
+for d in data_list:
+    parameters = parameters_list.iloc[d]
+    print('--------------------------------------------------')
+    print(parameters['dataset'])
+    print('--------------------------------------------------')
+    data_path = 'datasets/'
 
-dataset = DatasetUploader(parameters['dataset'],
-                          data_path,
-                          target_var=parameters['output_name'],
-                          cross_split=5,
-                          )
-x_train_list, x_test_list, y_train_list, y_test_list = dataset.stratified_k_fold()
+    dataset = DatasetUploader(parameters['dataset'],
+                              data_path,
+                              target_var=parameters['output_name'],
+                              cross_split=5,
+                              )
+    x_train_list, x_test_list, y_train_list, y_test_list = dataset.stratified_k_fold()
 
-best_accuracy = 0
-relevant_columns = []
-for ix in range(len(x_train_list)):
-    x_train, x_test, y_train, y_test = x_train_list[ix], x_test_list[ix], y_train_list[ix], y_test_list[ix]
-    columns = x_train.columns.tolist()
-    perm_res, network_accuracy = model_permutation_importance(x_train, y_train, x_test, y_test, parameters)
-    print("The best accuracy reached is: ", network_accuracy)
-    if network_accuracy > best_accuracy:
-        best_accuracy = network_accuracy
-        # get minimum importance
-        importance_dict = importance_dictionary(x_test, perm_res)
-        df_train, df_test = variable_selector(x_train, x_test, y_train, y_test, network_accuracy, importance_dict,
-                                              parameters)
-        relevant_columns = df_train.columns.tolist()
+    best_accuracy = 0
+    relevant_columns = []
+    for ix in range(len(x_train_list)):
+        x_train, x_test, y_train, y_test = x_train_list[ix], x_test_list[ix], y_train_list[ix], y_test_list[ix]
+        columns = x_train.columns.tolist()
+        perm_res, network_accuracy = model_permutation_importance(x_train, y_train, x_test, y_test, parameters)
+        print("The best accuracy reached is: ", network_accuracy)
+        if network_accuracy > best_accuracy:
+            best_accuracy = network_accuracy
+            # get minimum importance
+            importance_dict = importance_dictionary(x_test, perm_res)
+            df_train, df_test = variable_selector(x_train, x_test, y_train, y_test, network_accuracy, importance_dict,
+                                                  parameters)
+            relevant_columns = df_train.columns.tolist()
 
-print(relevant_columns)
-create_empty_file(parameters['dataset'] + '_relevant_columns')
-save_list(relevant_columns, parameters['dataset'] + '_relevant_columns')
+    print(relevant_columns)
+    create_empty_file(parameters['dataset'] + '_relevant_columns')
+    save_list(relevant_columns, parameters['dataset'] + '_relevant_columns')
 
-
-out_list = model_creator(parameters, data_path, relevant_variable=relevant_columns)
-out_list = pd.DataFrame(out_list, columns=['model_number', 'accuracy', 'val_accuracy'])
-out_list.to_csv('accuracy_' + parameters['dataset'] + '.csv')
+    out_list = model_creator(parameters, dataset, relevant_variable=relevant_columns)
+    out_list = pd.DataFrame(out_list, columns=['model_number', 'accuracy', 'val_accuracy'])
+    out_list.to_csv('accuracy_' + parameters['dataset'] + '.csv')

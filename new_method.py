@@ -11,6 +11,7 @@ from sklearn.metrics import accuracy_score
 import copy
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
+from scipy.stats import mode
 from dataset_split import number_split_finder, dataset_splitter_new  # dataset_splitter,
 import multiprocessing
 CPU_COUNT = multiprocessing.cpu_count()
@@ -97,14 +98,16 @@ def rule_creator(in_df_list, original_x, label_col, *args):
     valid.
     """
     rule_set = []
+    rule_application_matrix = []
     for df in in_df_list:
         conclusion = df[label_col].unique()[0]
         df = df.drop(label_col, axis=1)
         if args:
             df = df.drop(list(args), axis=1)
         rule = rule_assembler(df, original_x, conclusion)
+        rule_application_matrix.append([1 if x in rule['samples'] else 0 for x in range(len(original_x))])
         rule_set.append(rule)
-    return rule_set
+    return rule_set, rule_application_matrix
 
 
 def rule_elicitation(x, in_rule):
@@ -125,40 +128,49 @@ def rule_elicitation(x, in_rule):
     return intersect_indexes
 
 
-def rule_set_evaluator(original_y, rule_set, rule_area_only=False):
+def attack_matrix_definer(rule_set, list_of_attacks):
+    ret = np.zeros((len(rule_set), len(rule_set)))
+    for item in list_of_attacks:
+        m_row = int(item['source_index'])
+        m_col = int(item['target_index'])
+        if m_row < len(rule_set) and m_col < len(rule_set):
+            ret[m_row, m_col] = float(item['weight'])
+    return ret
+
+
+def ruleset_evaluator(original_y, rule_set, rule_application_matrix, list_of_attacks):
     """
     Evaluates a set of rules by eliciting each of them and calculate the overall accuracy. The rules are first
     sorted by the number of instances that they cover (in reverse order) so that the bigger rules do not cancel out the
     smaller one in case of overlapping rules.
     :param original_y:
     :param rule_set:
-    :param rule_area_only:
+    :param rule_application_matrix:
+    :param list_of_attacks:
     :return:
     """
-    predicted_y = []
-    rule_indexes = []
-    for rule in rule_set:
-        indexes = rule['samples']
-        rule_indexes += indexes
-        predicted_y.append((len(indexes), indexes, rule['class']))
-    predicted_y = sorted(predicted_y, reverse=True, key=lambda tup: tup[0])
-    ret_labels = np.empty(len(original_y))
-    ret_labels[:] = np.nan
-    for t in predicted_y:
-        ret_labels[t[1]] = t[2]
-    empty_index = list(np.where(np.isnan(ret_labels))[0])
-    if rule_area_only:
-        # Removing duplicates in the list of the indexes covered by the ruleset
-        rule_indexes = list(set(rule_indexes))
-        predicted_labels = ret_labels[rule_indexes]
-        # Replacing the nans with the number of output classes increased by 10
-        predicted_labels = nan_replacer(predicted_labels, len(np.unique(original_y))+10)
-        accuracy = accuracy_score(predicted_labels.round(), original_y[rule_indexes])
-    else:
-        if len(empty_index) > 0:
-            ret_labels = nan_replacer(ret_labels, len(np.unique(original_y))+10)
-        accuracy = accuracy_score(ret_labels.round(), original_y)
-    return accuracy, ret_labels, empty_index
+    attack_matrix = attack_matrix_definer(rule_set, list_of_attacks)
+    # Calculate the sum of the attacks received by each active rule from the other active rules
+    attack_application = np.matmul(rule_application_matrix, attack_matrix)
+    # Replacing the 0s corresponding to the non-active rules with a high value
+    max_attack = np.amax(attack_application) + 10
+    attack_application = np.where(rule_application_matrix == 1, attack_application, max_attack)
+    min_attacks = np.amin(attack_application, axis=1)
+    predicted_y = np.empty(len(original_y))
+    predicted_y[:] = np.nan
+    conclusions = [r['class'] for r in rule_set]
+    for idx in range(len(predicted_y)):
+        min_attack = min_attacks[idx]
+        if min_attack < max_attack:
+            min_index = list(np.where(attack_application[idx] == min_attack)[0])
+            # To be improved by considering the case when the mode does not exist
+            predicted_y[idx] = mode([conclusions[i] for i in min_index])[0][0]
+    empty_index = list(np.where(np.isnan(predicted_y))[0])
+    if len(empty_index) > 0:
+        predicted_y = nan_replacer(predicted_y, len(np.unique(original_y))+10)
+    predicted_y = predicted_y.astype(np.int)
+    accuracy = accuracy_score(predicted_y, original_y)
+    return accuracy, empty_index
 
 
 def elbow_method(in_df, threshold=0.05):
@@ -192,7 +204,7 @@ def iterative_clustering(data, index_list, min_sample, min_cluster_number, xi_va
     """
     print("I am extracting the clusters")
     clustering = OPTICS(min_samples=min_sample, xi=xi_value, n_jobs=CPU_COUNT, metric=distance_type
-                        ).fit(data.loc[index_list].to_numpy())
+                        ).fit(data.loc[index_list].to_numpy(dtype=object))
     # Increasing the labels of the clusters in case the OPTICS algorithm was already applied and some data are
     # already assigned to clusters
     new_clusters = [i + min_cluster_number if i != -1 else i for i in clustering.labels_.tolist()]
@@ -200,35 +212,33 @@ def iterative_clustering(data, index_list, min_sample, min_cluster_number, xi_va
     unique_labels, labels_frequency = np.unique(new_clusters, return_counts=True)
     # Retrieving the index of the -1 element (if it exists)
     idx = np.where(unique_labels == -1)[0]
-    print("I still have these instances not classified: ", idx, " with length: ", len(idx))
     # If the label -1 exists, check that its frequency is greater than min_sample * 2. If this is the case, the
     # OPTICS algorithm can be applied again
-    if len(idx) > 0 and labels_frequency[idx[0]] >= min_sample * 2:
-        min_new_label = np.max(unique_labels) + 1
-        new_index_list = data[data['clusters'] == -1].index.tolist()
-        data = iterative_clustering(data, new_index_list, min_sample, xi_value, min_new_label)
+    if len(idx) > 0:
+        print("I still have ", labels_frequency[idx[0]], " instances not classified.")
+        if labels_frequency[idx[0]] >= min_sample * 2:
+            min_new_label = np.max(unique_labels) + 1
+            new_index_list = data[data['clusters'] == -1].index.tolist()
+            data = iterative_clustering(data, new_index_list, min_sample, min_new_label, xi_value=xi_value)
     return data
 
 
-def rule_extractor(original_data, original_label, in_df, label_col, min_accuracy, rule_set, min_sample=20):
+def rule_extractor(original_data, in_df, label_col, rule_set, min_sample=20):
     """
     Return the ruleset automatically extracted to mimic the logic of a machine-learned model.
     :param original_data:
-    :param original_label:
     :param in_df:
     :param label_col:
-    :param min_accuracy:
     :param rule_set:
     :param min_sample:
     :return: a list of dictionaries where each dictionary is a rule
     """
     groups = in_df.groupby(by=label_col, as_index=False)
+    total_rule_application_matrix = []
     for key, group in groups:
-        best_accuracy = min_accuracy
         print("Working on class: ", key)
-        print("The group is of length ", len(group), " and the accuracy is ", best_accuracy)
         # To allow the OPTICS to have enough samples to create at least 2 clusters
-        if len(group) > min_sample * 2 and best_accuracy < 1:
+        if len(group) > min_sample * 2:
             print("I am working on a group of length ", len(group))
             group['clusters'] = -2
             group = iterative_clustering(group, group.index.tolist(), min_sample, 0)
@@ -236,39 +246,16 @@ def rule_extractor(original_data, original_label, in_df, label_col, min_accuracy
             # at the end when the ruleset will be completed
             group = group[group['clusters'] != -1]
             ans = [pd.DataFrame(x) for _, x in group.groupby('clusters', as_index=False)]
-            new_rules = rule_creator(ans, original_data, label_col, 'clusters')
+            print("I am in the rule_creator now")
+            new_rules, rule_application_matrix = rule_creator(ans, original_data, label_col, 'clusters')
             # Removing the antecedents that have limits spanning the entire range of values
+            print("I am pruning the antecedents of the rules")
             new_rules = antecedent_pruning(new_rules, original_data)
             # Removing the rules that do not improve the accuracy
-            keep_all_the_rules = True
-            if keep_all_the_rules:
-                new_ruleset_accuracy = 1
-            else:
-                new_rules_accuracy, _, _ = rule_set_evaluator(original_label, new_rules, rule_area_only=True)
-                new_rules = rule_pruning(new_rules, new_rules_accuracy, original_label)
-                # Calculating the accuracy of the entire ruleset that includes also the new rules
-                new_ruleset_accuracy, _, _ = rule_set_evaluator(original_label, rule_set + new_rules, rule_area_only=True)
-                print("New ruleset accuracy: ", new_rules_accuracy)
-            if new_ruleset_accuracy > best_accuracy:
-                rule_set = rule_set + new_rules
-            else:
-                for rule in new_rules:
-                    rule_acc, _, _ = rule_set_evaluator(original_label, rule_set + [rule], rule_area_only=True)
-                    print("The accuracy of the new rule is: ", rule_acc)
-                    if rule_acc < best_accuracy:
-                        rule_indexes = rule_elicitation(in_df, rule)
-                        new_x = in_df[in_df.index.isin(rule_indexes)]
-                        rule_set = rule_extractor(original_data, original_label, new_x, label_col, best_accuracy,
-                                                  rule_set)
-                    else:
-                        rule_set.append(rule)
-                        best_accuracy = rule_acc
-        # else:
-        #    group = group.drop(label_col, axis=1)
-        #    rule = rule_assembler(group, original_data, key)
-        #    rule = antecedent_pruning([rule], original_data)
-        #    rule_set = rule_set + rule
-    return rule_set
+            rule_set = rule_set + new_rules
+            total_rule_application_matrix += rule_application_matrix
+    total_rule_application_matrix = np.array(total_rule_application_matrix).transpose()
+    return rule_set, total_rule_application_matrix
 
 
 def find_min_position(array):
@@ -312,10 +299,10 @@ def minimum_distance(df, ruleset, label_col):
     return ret
 
 
-def complete_rule(in_df, original_y, rule_list, label_col):
+def complete_rule(in_df, original_y, rule_list, label_col, app_matrix, attack_list):
     new_df = copy.deepcopy(in_df)
     new_df[label_col] = original_y
-    _, _, empty_index = rule_set_evaluator(original_y, rule_list)
+    _, empty_index = ruleset_evaluator(original_y, rule_list, app_matrix, attack_list)
     if len(empty_index) > 0:
         uncovered_instances = new_df.iloc[empty_index]
         min_dist = minimum_distance(uncovered_instances, rule_list, label_col)
@@ -334,21 +321,36 @@ def complete_rule(in_df, original_y, rule_list, label_col):
     return rule_list
 
 
-def rule_pruning(rule_set, original_accuracy, original_y):
-    new_rules = copy.deepcopy(rule_set)
-    ret = []
-    item = 0
-    while item < len(new_rules):
-        rule = new_rules.pop(item)
-        new_accuracy, _, _ = rule_set_evaluator(original_y, new_rules)
-        if new_accuracy < original_accuracy:
-            ret.append(rule)
-            new_rules = [rule] + new_rules
-            item += 1
-    return ret
+def rule_counter(removed_rule, rule_set, attack_list):
+    for drs in rule_set:
+        if drs['rule_index'] > removed_rule['rule_index']:
+            drs['rule_index'] = drs['rule_index'] - 1
+    for dal in attack_list:
+        if dal['source_index'] > removed_rule['rule_index']:
+            dal['source_index'] = dal['source_index'] - 1
+        if dal['target_index'] > removed_rule['rule_index']:
+            dal['target_index'] = dal['target_index'] - 1
+    return rule_set, attack_list
 
 
-def ruleset_definer(original_x, predicted_y, dataset_par, weights, out_column, minimum_acc, max_row, min_row,
+def rule_pruning(rule_set, original_accuracy, original_y, app_matrix, attack_list):
+    for item in reversed(range(len(rule_set))):
+        new_rules = copy.deepcopy(rule_set)
+        new_app_matrix = copy.deepcopy(app_matrix)
+        new_attack_list = copy.deepcopy(attack_list)
+        removed_rule = new_rules.pop(item)
+        new_app_matrix = np.delete(new_app_matrix, item, axis=1)
+        new_rules, new_attack_list = rule_counter(removed_rule, new_rules, new_attack_list)
+        new_accuracy, _ = ruleset_evaluator(original_y, new_rules, new_app_matrix, new_attack_list)
+        if new_accuracy >= original_accuracy:
+            rule_set = new_rules
+            app_matrix = new_app_matrix
+            original_accuracy = new_accuracy
+            attack_list = new_attack_list
+    return rule_set, app_matrix
+
+
+def ruleset_definer(original_x, predicted_y, dataset_par, weights, out_column, max_row, min_row,
                     disc_var, cont_var, add_synthetic_data=False, split_x=None, split_y=None):
     if split_x is None:
         if add_synthetic_data:
@@ -366,16 +368,23 @@ def ruleset_definer(original_x, predicted_y, dataset_par, weights, out_column, m
         x = split_x
         x[out_column] = split_y
 
-    rules = rule_extractor(original_x, predicted_y, x, out_column, minimum_acc, [], min_sample=min_row)
-    rule_accuracy, _, _ = rule_set_evaluator(predicted_y, rules)
-    print("Calculating the rule accuracy")
-    rule_pruning = False
-    if rule_pruning:
-        final_rules = rule_pruning(rules, rule_accuracy, predicted_y)
+    # x = x.iloc[:1000]
+    # original_x = original_x.iloc[:1000]
+    # out_column = out_column[:1000]
+    # predicted_y = predicted_y[:1000]
+    rules, app_matrix = rule_extractor(original_x, x, out_column, [], min_sample=min_row)
+    attack_list, rules = attack_definer(rules)
+    print("I am calculating the accuracy of the new ruleset")
+    rule_accuracy, _ = ruleset_evaluator(predicted_y, rules, app_matrix, attack_list)
+    rule_pruning_var = True
+    if rule_pruning_var:
+        print("I am pruning the rules")
+        final_rules, app_matrix = rule_pruning(rules, rule_accuracy, predicted_y, app_matrix, attack_list)
     else:
         final_rules = rules
+    final_rules = [{k: v for k, v in d.items() if k != 'rule_number'} for d in final_rules]
     print("I am done, leaving the rule_definer function")
-    return final_rules
+    return final_rules, app_matrix
 
 
 def item_remover(in_list, remove_index_list):
@@ -412,8 +421,7 @@ def antecedent_pruning(ruleset, original_x):
 
 def cluster_rule_extractor(x_train, x_test, y_train, y_test, dataset_par, save_graph, disc_attributes, cont_attributes,
                            model):
-    minimum_acc = 0.8
-    max_row = 25000000
+    max_row = 100000
     label_col = dataset_par['output_name']
     n_class = dataset_par['classes']
     try:
@@ -429,34 +437,22 @@ def cluster_rule_extractor(x_train, x_test, y_train, y_test, dataset_par, save_g
     weights = np.array(model.get_weights())
 
     # The idea is to split the dataset only if the occurrence of one class exceeds the max number of rows allowed.
-    if max(np.bincount(results)) >= max_row:
-        overall_rules = []
-        n_splits = number_split_finder(results, max_row)
-        print('number of splits per class: ', n_splits)
-        print("Splitting the dataset")
-        # splits, split_labels = dataset_splitter(x_train, results, n_splits, n_class, distance_name='euclidean')
-        splits, split_labels = dataset_splitter_new(x_train, results, n_splits)
-        for i in range(len(splits)):
-            print("----------------- Working on a split ---------------------")
-            split_x = pd.DataFrame(splits[i], columns=x_train.columns.tolist())
-            split_rules = ruleset_definer(x_train, results, dataset_par, weights, label_col, minimum_acc,
-                                          max_row, min_row, disc_attributes, cont_attributes,
-                                          split_x=split_x, split_y=split_labels[i])
-            overall_rules += split_rules
-        rule_accuracy, _, _ = rule_set_evaluator(results, overall_rules)
-        overall_rules = rule_pruning(overall_rules, rule_accuracy, results)
-    else:
-        overall_rules = ruleset_definer(x_train, results, dataset_par, weights, label_col, minimum_acc, max_row,
-                                        min_row, disc_attributes, cont_attributes)
 
-    final_rules = complete_rule(x_train, results, overall_rules, label_col)
-    rule_accuracy, rule_prediction, _ = rule_set_evaluator(results, final_rules)
+    overall_rules, application_matrix = ruleset_definer(x_train, results, dataset_par, weights, label_col,
+                                                        max_row, min_row, disc_attributes, cont_attributes)
+
+    attack_list, overall_rules = attack_definer(overall_rules)
+    final_rules = complete_rule(x_train, results, overall_rules, label_col, application_matrix, attack_list)
     final_rules = antecedent_pruning(final_rules, x_train)
+    fidelity, _ = ruleset_evaluator(results, final_rules, application_matrix, attack_list)
+    accuracy, _ = ruleset_evaluator(np.concatenate([y_train, y_test], axis=0), final_rules, application_matrix, attack_list)
+    print('These are the ruleset accuracy and fidelity: ', accuracy, ', ', fidelity)
     # print(final_rules)
     # cluster_plots(X, y, label_col)
     # cluster_plots(X, rule_prediction.round().astype(int), label_col)
     print("I am calculating the metrics")
-    metrics = rule_metrics_calculator(x_train, np.concatenate([y_train, y_test], axis=0), results, final_rules, n_class)
+    metrics = rule_metrics_calculator(x_train, np.concatenate([y_train, y_test], axis=0), results, final_rules, n_class,
+                                      new_method={'accuracy': accuracy, 'fidelity': fidelity})
     if save_graph:
         attack_list, final_rules = attack_definer(final_rules)
         create_empty_file('NEW_METHOD_' + dataset_par['dataset'] + "_attack_list")

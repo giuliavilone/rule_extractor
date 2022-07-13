@@ -1,12 +1,12 @@
 # Use scikit-learn to grid search the number of neurons
 from scipy.io import arff
 import pandas as pd
-import numpy
+# import numpy
 from sklearn.model_selection import GridSearchCV
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense
-from tensorflow.keras.layers import Dropout
-from tensorflow.keras.wrappers.scikit_learn import KerasClassifier
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.layers import Dropout
+from keras.wrappers.scikit_learn import KerasClassifier
 from keras.constraints import maxnorm
 from sklearn.preprocessing import LabelEncoder
 import os

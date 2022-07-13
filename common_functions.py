@@ -1,5 +1,4 @@
-import copy
-
+# import copy
 from keras.callbacks import ModelCheckpoint
 from keras.models import Sequential
 from keras.layers import Dense, Dropout
@@ -130,7 +129,7 @@ def data_file(file_name, path, remove_columns=True):
                           'htru': ['mean_dm_snr_curve', 'kurtosis_dm_snr_curve', 'skewness_profile', 'mean_profile'],
                           'occupancy': ['HumidityRatio', 'Temperature'],
                           'shuttle': ['S7', 'S8', 'S9'],
-                          'adult': ['education']  # Beacuse there is the field education-num which represents the same
+                          'adult': ['education']  # Because there is the field education-num which represents the same
                                                   # information but in numbers
                           }
     dataset = pd.read_csv(path + file_name + '.csv')
@@ -196,7 +195,6 @@ def dataset_uploader(file_name,
                      cross_split=5,
                      apply_smote=True,
                      remove_columns=True,
-                     data_normalization=True,
                      ):
     """
     Upload a dataset from a csv file into a Pandas dataframe and applies, if requested, the SMOTE algorithm to
@@ -209,7 +207,6 @@ def dataset_uploader(file_name,
     :param apply_smote: boolean variable. If true, the SMOTE oversampling algorithm is applied
     :param remove_columns: boolean variable. If true, the columns listed in the variable "feat_to_be_deleted" are
     deleted (see function data_file)
-    :param data_normalization: boolean variable. If true, input data are normalised using the StandardScaler sklearn
     function
     :return: list of Pandas datasets containing the training and evaluations datasets, a separate list of the output
     variable of the training and evaluation datasets, list of the output class labels, list of the discrete and
@@ -274,6 +271,7 @@ class DatasetUploader:
                  target_var='class',
                  cross_split=5,
                  apply_smote=True,
+                 smote_sampling_strategy='auto',
                  remove_columns=True,
                  data_normalization=True,
                  seed=1983
@@ -284,6 +282,7 @@ class DatasetUploader:
         self.target_var = target_var
         self.cross_split = cross_split
         self.apply_smote = apply_smote
+        self.smote_sampling_strategy = smote_sampling_strategy
         self.remove_columns = remove_columns
         self.data_normalization = data_normalization
         self.seed = seed
@@ -312,7 +311,10 @@ class DatasetUploader:
             if value in ['object', 'bool']:
                 if index != self.target_var:
                     self.discrete_column_names.append(index)
-                    in_df = pd.get_dummies(in_df, columns=[index])
+                    # The drop_first option is set to True to avoid the issue of multicollinearity. 
+                    # See this blog for more info:
+                    # https://towardsdatascience.com/introduction-to-data-preprocessing-in-machine-learning-a9fa83a5dc9d
+                    in_df = pd.get_dummies(in_df, columns=[index], drop_first=True)
         return in_df
 
     def irrelevant_column_remover(self, ind_df, path='relevant_columns/'):
@@ -355,7 +357,7 @@ class DatasetUploader:
         for train_idx, test_idx, in self.cv.split(self.x, self.y):
             x_train, y_train = self.x[self.x.index.isin(train_idx)], self.y[train_idx]
             if self.apply_smote:
-                x_train, y_train = SMOTE().fit_resample(x_train, y_train)
+                x_train, y_train = SMOTE(sampling_strategy=self.smote_sampling_strategy).fit_resample(x_train, y_train)
             x_test, y_test = self.x[self.x.index.isin(test_idx)], self.y[test_idx]
             x_train_list.append(x_train)
             x_test_list.append(x_test)
@@ -426,7 +428,7 @@ def overlap_calculator(in_df, rules):
     return overlap
 
 
-def rule_metrics_calculator(in_df, y_test, model_labels, final_rules, n_classes):
+def rule_metrics_calculator(in_df, y_test, model_labels, final_rules, n_classes, new_method=None):
     """
     Calculate the correctness, fidelity, robustness and number of rules. The completeness, average length and number
     of rules are calculated in a different way for each rule extractor and passed as inputs
@@ -435,6 +437,7 @@ def rule_metrics_calculator(in_df, y_test, model_labels, final_rules, n_classes)
     :param model_labels: list of the predicted output classes of the samples contained in in_df
     :param final_rules: list of the rules contained in the final ruleset
     :param n_classes: number of output classes
+    :param new_method
     :return: list of metrics
     """
     rule_n = len(final_rules)
@@ -453,9 +456,15 @@ def rule_metrics_calculator(in_df, y_test, model_labels, final_rules, n_classes)
     perturbed_labels[np.where(np.isnan(perturbed_labels))] = n_classes + 10
 
     print("Completeness of the ruleset is: " + str(complete))
-    correctness = accuracy_score(y_test, rule_labels)
+    if new_method is None:
+        correctness = accuracy_score(y_test, rule_labels)
+    else:
+        correctness = new_method['accuracy']
     print("Correctness of the ruleset is: " + str(correctness))
-    fidelity = accuracy_score(model_labels, rule_labels)
+    if new_method is None:
+        fidelity = accuracy_score(model_labels, rule_labels)
+    else:
+        fidelity = new_method['fidelity']
     print("Fidelity of the ruleset is: " + str(fidelity))
     robustness = accuracy_score(rule_labels, perturbed_labels)
     print("Robustness of the ruleset is: " + str(robustness))
@@ -470,7 +479,6 @@ def rule_metrics_calculator(in_df, y_test, model_labels, final_rules, n_classes)
 
 
 def rule_merger(ruleset):
-    # This function must be debugged
     """
     This function checks if there are rules with the same class and list of columns. If this is the case, these rules
     are merged together and will be treated as 'OR' logical disjunction. The cover sets of these rules are joined
@@ -524,6 +532,7 @@ def attack_definer(final_rules, merge_rules=False, inconsistency_budget=0.05):
     :param merge_rules: boolean variable. If true, two rules with the same conclusion and same list of variables in
     their antecedents will be joined together (see rule_merger function)
     :param inconsistency_budget:
+    :param set_rule_name:
     :return: list of attackers, modified ruleset with merged rules
     """
     ret = []
@@ -531,6 +540,7 @@ def attack_definer(final_rules, merge_rules=False, inconsistency_budget=0.05):
         rule = final_rules[rule_number]
         # rule_cover = rule_elicitation(in_df, rule)
         rule['rule_number'] = "Rule "+str(rule_number)
+        rule['rule_index'] = rule_number
     if merge_rules:
         final_rules = rule_merger(final_rules)
     for pair in itertools.combinations(final_rules, 2):
@@ -545,25 +555,27 @@ def attack_definer(final_rules, merge_rules=False, inconsistency_budget=0.05):
                     # In this case a_index, b_index and comparison_index contain the same list of samples, so the
                     # weights are equal to 1
                     ret.append({"source": a['rule_number'], "target": b['rule_number'], "type": "rebuttal",
-                                "weight": 1})
+                                "weight": 1, "source_index": a['rule_index'], "target_index": b['rule_index']})
                     ret.append({"source": b['rule_number'], "target": a['rule_number'], "type": "rebuttal",
-                                "weight": 1})
+                                "weight": 1, "source_index": b['rule_index'], "target_index": a['rule_index']})
                 else:
                     # The weights of the undercut attacks is set equal to 1 as the undercutting rule always wins
                     if np.array_equal(a_index, comparison_index):  # Rule a fully included in rule b
                         ret.append({"source": a['rule_number'], "target": b['rule_number'], "type": "undercut",
-                                    "weight": 1})
+                                    "weight": 1, "source_index": a['rule_index'], "target_index": b['rule_index']})
                     elif np.array_equal(b_index, comparison_index):  # Rule b fully included in rule a
                         ret.append({"source": b['rule_number'], "target": a['rule_number'], "type": "undercut",
-                                    "weight": 1})
+                                    "weight": 1, "source_index": b['rule_index'], "target_index": a['rule_index']})
                     else:
                         attack_weights = attack_weight_calculator(a_index, b_index, comparison_index)
                         if attack_weights['rule_b'] >= attack_weights['rule_a'] + inconsistency_budget:
                             ret.append({"source": a['rule_number'], "target": b['rule_number'], "type": "rebuttal",
-                                        "weight": attack_weights['rule_b']})
+                                        "weight": attack_weights['rule_b'], "source_index": a['rule_index'],
+                                        "target_index": b['rule_index']})
                         elif attack_weights['rule_a'] >= attack_weights['rule_b'] + inconsistency_budget:
                             ret.append({"source": b['rule_number'], "target": a['rule_number'], "type": "rebuttal",
-                                        "weight": attack_weights['rule_a']})
+                                        "weight": attack_weights['rule_a'], "source_index": b['rule_index'],
+                                        "target_index": a['rule_index']})
     return ret, final_rules
 
 

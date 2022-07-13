@@ -10,13 +10,12 @@ from new_method import cluster_rule_extractor
 
 
 # parameters = pd.read_csv('datasets/summary_new2.csv')
-parameters = pd.read_csv('datasets-UCI/new_rules/summary.csv')
-# data_path = 'datasets/'
-data_path = 'datasets-UCI/new_rules/'
+parameters = pd.read_csv('datasets/summary.csv')
+data_path = 'datasets/'
 save_graph = False
 
 
-for df in [0]:
+for df in [0, 6, 13, 9]:
     metric_list = []
     dataset_par = parameters.iloc[df]
     dataset_name = dataset_par['dataset']
@@ -27,7 +26,7 @@ for df in [0]:
     dataset = DatasetUploader(dataset_name, data_path,
                               target_var=label_col,
                               apply_smote=False,
-                              data_normalization=False)
+                              data_normalization=True)
     X_train, X_test, y_train, y_test = dataset.stratified_k_fold(best_split=int(dataset_par['best_model']))
     dataset.column_type_counter()
     disc_attributes, cont_attributes = dataset.discrete_columns_indexes, dataset.continuous_columns_indexes
@@ -43,13 +42,13 @@ for df in [0]:
                        + str(int(dataset_par['best_model'])) + '.h5')
 
     print('---------------------- Working on REFNE -----------------------')
-    metric_refne = refne_run(X_train, X_test, y_test, disc_attributes_names, cont_attributes, dataset_par, model,
-                             save_graph)
+    # metric_refne = refne_run(X_train, X_test, y_test, disc_attributes_names, cont_attributes, dataset_par, model,
+    # save_graph)
     # metric_list.append(['REFNE'] + metric_refne)
 
     print('---------------------- Working on C45 PANE -----------------------')
-    # metric_c45 = run_c45_pane(X_train, X_test, y_test, dataset_par, model, labels)
-    # metric_list.append(['C45 PANE'] + metric_c45)
+    metric_c45 = run_c45_pane(X_train, X_test, y_test, dataset_par, model, dataset.labels)
+    metric_list.append(['C45 PANE'] + metric_c45)
 
     print('---------------------- Working on RxNCM -----------------------')
     # metric_rxncn = rxncn_run(X_train, X_test, y_train, y_test, dataset_par, model, save_graph)
