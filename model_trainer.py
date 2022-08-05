@@ -12,6 +12,8 @@ from matplotlib import pyplot
 import copy
 import multiprocessing
 CPU_COUNT = multiprocessing.cpu_count()
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 
 def create_model(train_x, n_classes, neurons, optimizer='Adam', init_mode='glorot_uniform',
@@ -182,7 +184,7 @@ def variable_selector(train_df, test_df, train_y, test_y, original_accuracy, imp
 
 
 parameters_list = pd.read_csv('datasets/summary.csv')
-data_list = [9, 10, 12, 13, 16, 17, 19]
+data_list = [4]
 for d in data_list:
     parameters = parameters_list.iloc[d]
     print('--------------------------------------------------')

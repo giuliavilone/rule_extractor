@@ -9,14 +9,14 @@ from common_functions import load_list
 
 def method_ranking(df):
     ret_list = []
-    for label, col in df.iteritems():
+    for label, row in df.iteritems():
         if (label == 'Method') or (label == 'Dataset'):
-            col = col.tolist()
-            col.insert(0, label)
-            ret_list.append(col)
+            row = row.tolist()
+            row.insert(0, label)
+            ret_list.append(row)
         else:
-            col = col.to_numpy()
-            ranks = rankdata(col).tolist()
+            row = row.to_numpy()
+            ranks = rankdata(row).tolist()
             ranks.insert(0, label)
             ret_list.append(ranks)
     ret_df = pd.DataFrame(ret_list, columns=['item', 'rank1', 'rank2', 'rank3', 'rank4', 'rank5'])
@@ -25,7 +25,6 @@ def method_ranking(df):
 
 def decreasing_ranking(df, column_list):
     for column in column_list:
-        col = df[column]
         max_column = max(df[column])
         if max_column > 0:
             df[column] = [1 - i/max_column for i in df[column].tolist()]
@@ -55,7 +54,6 @@ def normalize(df):
 
 data = pd.read_csv('metrics.csv')
 method_groups = data.groupby(['Dataset'], as_index=False)
-parameters = pd.read_csv('datasets/summary_new2.csv')
 
 method_list = []
 out_list = []

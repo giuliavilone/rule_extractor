@@ -520,12 +520,12 @@ def attack_weight_calculator(rule_a_sample, rule_b_sample, intersection):
     :param intersection: list of sample in the intersection set between the two rules
     :return: list of rules' weights
     """
-    ret = {'rule_a': float(len(intersection)) / float(len(rule_a_sample)),
-           'rule_b': float(len(intersection)) / float(len(rule_b_sample))}
+    ret = {'rule_a': float(float(len(rule_a_sample) / len(intersection))),
+           'rule_b': float(float(len(rule_b_sample) / len(intersection)))}
     return ret
 
 
-def attack_definer(final_rules, merge_rules=False, inconsistency_budget=0.05):
+def attack_definer(final_rules, merge_rules=False, inconsistency_budget=0.55):
     """
     Define the attack between conflicting rules
     :param final_rules: list of rules
@@ -568,11 +568,11 @@ def attack_definer(final_rules, merge_rules=False, inconsistency_budget=0.05):
                                     "weight": 1, "source_index": b['rule_index'], "target_index": a['rule_index']})
                     else:
                         attack_weights = attack_weight_calculator(a_index, b_index, comparison_index)
-                        if attack_weights['rule_b'] >= attack_weights['rule_a'] + inconsistency_budget:
+                        if attack_weights['rule_b'] >= inconsistency_budget:
                             ret.append({"source": a['rule_number'], "target": b['rule_number'], "type": "rebuttal",
                                         "weight": attack_weights['rule_b'], "source_index": a['rule_index'],
                                         "target_index": b['rule_index']})
-                        elif attack_weights['rule_a'] >= attack_weights['rule_b'] + inconsistency_budget:
+                        elif attack_weights['rule_a'] >= inconsistency_budget:
                             ret.append({"source": b['rule_number'], "target": a['rule_number'], "type": "rebuttal",
                                         "weight": attack_weights['rule_a'], "source_index": b['rule_index'],
                                         "target_index": a['rule_index']})

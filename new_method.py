@@ -12,7 +12,6 @@ import copy
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from scipy.stats import mode
-from dataset_split import number_split_finder, dataset_splitter_new  # dataset_splitter,
 import multiprocessing
 CPU_COUNT = multiprocessing.cpu_count()
 
@@ -54,6 +53,14 @@ def prediction_classifier(orig_y, predict_y, comparison="misclassified"):
 
 
 def cluster_plots(in_df, clusters, label_col):
+    """
+    Generate a scatter plot of the input dataset. The data are standardized and then their dimension is reduced with
+    the PCA analysis
+    :param in_df: pandas Dataframe
+    :param clusters: list of the clusters
+    :param label_col:
+    :return: the scatter plot of the clusters
+    """
     colors = np.array(list(islice(cycle(['#377eb8', '#ff7f00', '#4daf4a', '#f781bf', '#a65628', '#984ea3',
                                          '#999999', '#e41a1c', '#dede00']), int(max(clusters) + 1))))
     features = in_df.columns.tolist()
@@ -75,7 +82,7 @@ def rule_assembler(df, original_x, conclusion):
     :param df: pandas dataframe containing the data that will be covered by the new rule
     :param original_x: pandas dataframe containing the entire dataset (either training, valuation or both)
     :param conclusion: the name of the output class that must be assigned to the rule's conclusion
-    :return:
+    :return: dictionary containing the rule's information
     """
     rule = {'class': conclusion,
             'columns': df.columns.tolist(),
@@ -129,6 +136,15 @@ def rule_elicitation(x, in_rule):
 
 
 def attack_matrix_definer(rule_set, list_of_attacks):
+    """
+    Return a numpy 2D array containing the weights of the attacks. The rows represent the attacker whereas the columns
+    are the attacked rules
+    :param rule_set: list of dictionaries containing the information about the extracted rules (antecedents, conclusion,
+                    rule cover, etc.)
+    :param list_of_attacks: list of dictionaries containing the information about the attacks (source of the attack,
+                            attacked rule, weight, etc.)
+    :return: numpy array with the weights of the attacks
+    """
     ret = np.zeros((len(rule_set), len(rule_set)))
     for item in list_of_attacks:
         m_row = int(item['source_index'])
@@ -142,12 +158,13 @@ def ruleset_evaluator(original_y, rule_set, rule_application_matrix, list_of_att
     """
     Evaluates a set of rules by eliciting each of them and calculate the overall accuracy. The rules are first
     sorted by the number of instances that they cover (in reverse order) so that the bigger rules do not cancel out the
-    smaller one in case of overlapping rules.
-    :param original_y:
-    :param rule_set:
-    :param rule_application_matrix:
-    :param list_of_attacks:
-    :return:
+    smaller one in case of overlapping rules
+    :param original_y: list of labels
+    :param rule_set: list of dictionaries representing the rules
+    :param rule_application_matrix: a numpy 2D array of 0s and 1s representing which rules apply to which samples. Each
+                                    row is a sample and each column is a rule
+    :param list_of_attacks: list of dictionaries representing the attacks between rules
+    :return: accuracy of the ruleset (int) and the list of indexes of the samples not covered by the ruleset
     """
     attack_matrix = attack_matrix_definer(rule_set, list_of_attacks)
     # Calculate the sum of the attacks received by each active rule from the other active rules
@@ -178,9 +195,9 @@ def elbow_method(in_df, threshold=0.05):
     Returning the best number of clusters by using the Elbow Method
     Ref: https://en.wikipedia.org/wiki/Elbow_method_(clustering)
     Code: https://predictivehacks.com/k-means-elbow-method-code-for-python/
-    :param in_df:
+    :param in_df: pandas Dataframe
     :param threshold:
-    :return: n_clusters
+    :return: n_clusters (int)
     """
     baseline = KMeans(n_clusters=1).fit(in_df)
     distances = [baseline.inertia_]
@@ -199,8 +216,18 @@ def elbow_method(in_df, threshold=0.05):
 def iterative_clustering(data, index_list, min_sample, min_cluster_number, xi_value=0.05, distance_type='minkowski'):
     """
     Applied the OPTICS clustering algorithm iteratively until just a few samples are considered as outliers and not
-    placed in any cluster (meaning that their label is -1).
-    :return:
+    placed in any cluster (meaning that their label is -1)
+    :param data: pandas Dataframe with the input instances (only the descriptive or independent variables)
+    :param index_list: list of the indexes of the instances to be clustered
+    :param min_sample: number of the minimum number of instances to be contained by a cluster
+    :param min_cluster_number: number of clusters already generated. This represents the initial cluster number to be
+                               assigned to the new clusters
+    :param xi_value: float between 0 and 1, default=0.05 Determines the minimum steepness on the reachability plot that
+                    constitutes a cluster boundary in the OPTICS algorithm
+    :param distance_type: Metric to use for distance computation (see the OPTICS documentation at
+                          https://scikit-learn.org/stable/modules/generated/sklearn.cluster.OPTICS.html)
+    :return: the input pandas Dataframe containing a new column with the number of the cluster which is instance is
+             assigned to
     """
     print("I am extracting the clusters")
     clustering = OPTICS(min_samples=min_sample, xi=xi_value, n_jobs=CPU_COUNT, metric=distance_type
@@ -226,11 +253,12 @@ def iterative_clustering(data, index_list, min_sample, min_cluster_number, xi_va
 def rule_extractor(original_data, in_df, label_col, rule_set, min_sample=20):
     """
     Return the ruleset automatically extracted to mimic the logic of a machine-learned model.
-    :param original_data:
-    :param in_df:
-    :param label_col:
-    :param rule_set:
-    :param min_sample:
+    :param original_data: pandas Dataframe containing the original version of the input dataset
+    :param in_df: pandas Dataframe containing a copy of the original dataset that will be modified while extracting the
+                  rules
+    :param label_col: list containing the output labels of each input instance
+    :param rule_set: list of rules previously extracted
+    :param min_sample: minimum number of instances to be included in each cluster
     :return: a list of dictionaries where each dictionary is a rule
     """
     groups = in_df.groupby(by=label_col, as_index=False)
@@ -246,6 +274,7 @@ def rule_extractor(original_data, in_df, label_col, rule_set, min_sample=20):
             # at the end when the ruleset will be completed
             group = group[group['clusters'] != -1]
             ans = [pd.DataFrame(x) for _, x in group.groupby('clusters', as_index=False)]
+            print("I have extracted ", len(ans), ' rules.')
             print("I am in the rule_creator now")
             new_rules, rule_application_matrix = rule_creator(ans, original_data, label_col, 'clusters')
             # Removing the antecedents that have limits spanning the entire range of values
@@ -280,7 +309,7 @@ def minimum_distance(df, ruleset, label_col):
     of the dataset and the rule limits for each column of the input dataset. For examples, let's assume that the rule
     on variable A has a range of [5,10] and the dataframe contains 3 instances that have the following values for
     variable A: 1, 7, 12. Their distances to the rule will be 4 (5-1), 0 (the second instance falls within the rule's
-    range) and 2 (12-10).
+    range) and 2 (12-10)
     :param df: pandas dataframe
     :param ruleset: list of rules
     :param label_col: name of the output column
@@ -300,6 +329,19 @@ def minimum_distance(df, ruleset, label_col):
 
 
 def complete_rule(in_df, original_y, rule_list, label_col, app_matrix, attack_list):
+    """
+    Extend the existing rules to make sure that the ruleset is complete, meaning that it covers all the input instances.
+    To do so, it calculates the Manhattan distance of each instance that is ignored by the ruleset to all the rules. The
+    antecedents of the closest rule will be modified to include the instance.
+    :param in_df: pandas Dataframe containing the independent variable of the input dataset
+    :param original_y: list of the output labels of the input instances
+    :param rule_list: list of dictionaries containing the rules
+    :param label_col: name of the dependent variable of the input dataset
+    :param app_matrix: a numpy 2D array of 0s and 1s representing which rules apply to which samples. Each
+                       row is a sample and each column is a rule
+    :param attack_list: list of dictionaries representing the attacks
+    :return: the list of the updated rules
+    """
     new_df = copy.deepcopy(in_df)
     new_df[label_col] = original_y
     _, empty_index = ruleset_evaluator(original_y, rule_list, app_matrix, attack_list)
@@ -322,19 +364,42 @@ def complete_rule(in_df, original_y, rule_list, label_col, app_matrix, attack_li
 
 
 def rule_counter(removed_rule, rule_set, attack_list):
-    for drs in rule_set:
-        if drs['rule_index'] > removed_rule['rule_index']:
-            drs['rule_index'] = drs['rule_index'] - 1
-    for dal in attack_list:
-        if dal['source_index'] > removed_rule['rule_index']:
-            dal['source_index'] = dal['source_index'] - 1
-        if dal['target_index'] > removed_rule['rule_index']:
-            dal['target_index'] = dal['target_index'] - 1
+    """
+    Assign the new rule index to the rules and attacks remaining in the ruleset after a rule has been pruned. The rule
+    before the pruned rules are not modified, whereas the rules that are listed after the pruned rules are modified by
+    decreasing their index by one unit. The attacks are modified accordingly to keep the index of the attacking and
+    attacked rules consistent
+    :param removed_rule: dictionary of the pruned rule
+    :param rule_set: list of dictionaries containing the rules
+    :param attack_list: list of dictionaries representing the attacks
+    :return: list of the updated rules and attacks
+    """
+    for rule in rule_set:
+        if rule['rule_index'] > removed_rule['rule_index']:
+            rule['rule_index'] = rule['rule_index'] - 1
+    for attack in attack_list:
+        if attack['source_index'] > removed_rule['rule_index']:
+            attack['source_index'] = attack['source_index'] - 1
+        if attack['target_index'] > removed_rule['rule_index']:
+            attack['target_index'] = attack['target_index'] - 1
     return rule_set, attack_list
 
 
 def rule_pruning(rule_set, original_accuracy, original_y, app_matrix, attack_list):
+    """
+    Delete the rules that do not have any impact on the accuracy of the ruleset. This function also updates the
+    matrix representing which rules are activated by each instance by removing the column corresponding to the
+    pruned rule. It also removes the attacks related to the pruned rules from the attack list
+    :param rule_set: list of dictionaries representing the rules
+    :param original_accuracy: accuracy of the input ruleset
+    :param original_y: list of the output labels of the input instances
+    :param app_matrix: a numpy 2D array of 0s and 1s representing which rules apply to which samples. Each
+                       row is a sample and each column is a rule
+    :param attack_list: list of dictionaries representing the attacks
+    :return: the pruned ruleset (list of dictionaries) and the pruned rule application matrix
+    """
     for item in reversed(range(len(rule_set))):
+        print("I am working on rule number ", item)
         new_rules = copy.deepcopy(rule_set)
         new_app_matrix = copy.deepcopy(app_matrix)
         new_attack_list = copy.deepcopy(attack_list)
@@ -368,10 +433,6 @@ def ruleset_definer(original_x, predicted_y, dataset_par, weights, out_column, m
         x = split_x
         x[out_column] = split_y
 
-    # x = x.iloc[:1000]
-    # original_x = original_x.iloc[:1000]
-    # out_column = out_column[:1000]
-    # predicted_y = predicted_y[:1000]
     rules, app_matrix = rule_extractor(original_x, x, out_column, [], min_sample=min_row)
     attack_list, rules = attack_definer(rules)
     print("I am calculating the accuracy of the new ruleset")
@@ -390,9 +451,9 @@ def ruleset_definer(original_x, predicted_y, dataset_par, weights, out_column, m
 def item_remover(in_list, remove_index_list):
     """
     Remove the elements in the remove_index_list from the in_list and return the shortened list
-    :param in_list:
-    :param remove_index_list:
-    :return:
+    :param in_list: list of indexes
+    :param remove_index_list: list of the indexes to be removed
+    :return: updated list of indexes
     """
     return [val for ind, val in enumerate(in_list) if ind not in remove_index_list]
 
@@ -400,9 +461,9 @@ def item_remover(in_list, remove_index_list):
 def antecedent_pruning(ruleset, original_x):
     """
     Remove the antecedents whose limits cover the entire range of the original dataset.
-    :param ruleset:
-    :param original_x:
-    :return:
+    :param ruleset: list of dictionaries representing the rules
+    :param original_x: pandas Dataframe containing the original version of the input dataset
+    :return: list of the updated rules
     """
     limits = [[original_x[col].min(), original_x[col].max()] for col in original_x.columns.tolist()]
     out_ruleset = []
@@ -428,7 +489,7 @@ def cluster_rule_extractor(x_train, x_test, y_train, y_test, dataset_par, save_g
         min_row = dataset_par['minimum_row']
     except Exception as ex:
         print(ex)
-        min_row = 10
+        min_row = 120
     print("The minimum number of rows is: ", min_row)
 
     x_train = pd.concat([x_train, x_test], ignore_index=True)
@@ -445,7 +506,8 @@ def cluster_rule_extractor(x_train, x_test, y_train, y_test, dataset_par, save_g
     final_rules = complete_rule(x_train, results, overall_rules, label_col, application_matrix, attack_list)
     final_rules = antecedent_pruning(final_rules, x_train)
     fidelity, _ = ruleset_evaluator(results, final_rules, application_matrix, attack_list)
-    accuracy, _ = ruleset_evaluator(np.concatenate([y_train, y_test], axis=0), final_rules, application_matrix, attack_list)
+    accuracy, _ = ruleset_evaluator(np.concatenate([y_train, y_test], axis=0), final_rules, application_matrix,
+                                    attack_list)
     print('These are the ruleset accuracy and fidelity: ', accuracy, ', ', fidelity)
     # print(final_rules)
     # cluster_plots(X, y, label_col)

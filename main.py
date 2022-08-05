@@ -15,7 +15,7 @@ data_path = 'datasets/'
 save_graph = False
 
 
-for df in [0, 6, 13, 9]:
+for df in [9]:
     metric_list = []
     dataset_par = parameters.iloc[df]
     dataset_name = dataset_par['dataset']
